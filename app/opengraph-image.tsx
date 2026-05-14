@@ -20,12 +20,18 @@ import { ImageResponse } from "next/og";
 // (auto-generated from tokens.json by Style Dictionary). The validator
 // skip-lists lib/design/* so the literal hexes there don't trip it.
 import {
-  ColorBrandBlue,
-  ColorBrandRed,
   ColorBrandWhite,
   ColorTextMuted,
   ColorTextPrimary,
 } from "@/lib/design/tokens";
+
+// Canonical PAP colours from Wikimedia File:PAP_logo_variation.svg —
+// kept byte-identical with components/brand/PapLogo.tsx and the favicon
+// app/icon.svg so every surface that shows the mark shows the SAME hex.
+// (The brand-* tokens used by CTAs / buttons are a slightly different
+// approximation — see KG_DesignSystem_v1.md.)
+const PAP_BLUE = "#0052A1"; // tokens-ok
+const PAP_RED = "#EA312D"; // tokens-ok
 
 export const runtime = "edge";
 export const alt = "PAP Kampong Glam — Membership Application Portal";
@@ -67,14 +73,14 @@ export default async function OpenGraphImage() {
           >
             <path
               d="m33.328,131.239c-19.588,-8.26,-33.328,-27.636,-33.328,-50.239c0,-26.348,18.672,-48.313,43.513,-53.394l-4.757,21.571l-.002,-.004c-11.708,5.802,-19.754,17.872,-19.754,31.827c0,14.377,8.541,26.755,20.827,32.337l-6.496,17.902l6.496,-17.902"
-              fill={ColorBrandBlue}
+              fill={PAP_BLUE}
             />
             <path
               d="m75.005,30.485c19.942,8.098,33.995,27.657,33.995,50.515c0,30.112,-24.388,54.5,-54.5,54.5c-3.272,0,-6.118,-.288,-9.231,-.84v.06l10.569,-18.249v.015c19.14,-.538,34.162,-16.215,34.162,-35.486c0,-14.741,-8.979,-27.38,-21.768,-32.748h-.003l6.833,-17.739"
-              fill={ColorBrandBlue}
+              fill={PAP_BLUE}
             />
             <polygon
-              fill={ColorBrandRed}
+              fill={PAP_RED}
               points="49.833 89.75 32.083 89.75 53.333 0 82.333 0 58.333 68.75 80.083 68.75 27.333 158.75"
             />
           </svg>
