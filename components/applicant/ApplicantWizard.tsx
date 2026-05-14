@@ -608,7 +608,25 @@ export function ApplicantWizard(props: ApplicantWizardProps) {
                     }
                   />
                   <Label htmlFor="consent_pdpa" className="text-sm font-normal leading-snug">
-                    I agree to the Constitution and Rules of the Party and to the Privacy Policy.
+                    I agree to the{" "}
+                    <a
+                      href="/terms"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium text-brand-blue underline"
+                    >
+                      Constitution and Rules of the Party
+                    </a>{" "}
+                    and to the{" "}
+                    <a
+                      href="/privacy"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium text-brand-blue underline"
+                    >
+                      Privacy Policy
+                    </a>
+                    .
                   </Label>
                 </div>
                 {page2Form.formState.errors.consent_pdpa && (

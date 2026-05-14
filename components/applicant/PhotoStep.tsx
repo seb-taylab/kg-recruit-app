@@ -37,6 +37,21 @@ export function PhotoStep({ initialUrl, onCroppedBlob }: PhotoStepProps) {
     };
   }, []);
 
+  // Camera mount: attach the stream AFTER React has rendered the <video>
+  // element. Without this two-step, videoRef.current is null when we try
+  // to set srcObject inside startCamera() — the user sees a black box and
+  // the snapshot captures nothing (videoWidth/Height are 0).
+  React.useEffect(() => {
+    if (mode !== "camera") return;
+    const stream = streamRef.current;
+    const video = videoRef.current;
+    if (!stream || !video) return;
+    video.srcObject = stream;
+    video.play().catch(() => {
+      setCameraError("Couldn't start the camera preview. Use Upload instead.");
+    });
+  }, [mode]);
+
   async function startCamera() {
     setCameraError(null);
     try {
@@ -45,10 +60,8 @@ export function PhotoStep({ initialUrl, onCroppedBlob }: PhotoStepProps) {
         audio: false,
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
+      // Switching mode renders the <video>; the useEffect above then
+      // attaches the stream on the next commit.
       setMode("camera");
     } catch {
       setCameraError(
@@ -60,6 +73,10 @@ export function PhotoStep({ initialUrl, onCroppedBlob }: PhotoStepProps) {
   function snapPhoto() {
     if (!videoRef.current) return;
     const v = videoRef.current;
+    if (!v.videoWidth || !v.videoHeight) {
+      setCameraError("Camera isn't ready yet — wait a moment and try Snap again.");
+      return;
+    }
     const canvas = document.createElement("canvas");
     canvas.width = v.videoWidth;
     canvas.height = v.videoHeight;
