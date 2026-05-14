@@ -88,18 +88,18 @@ export async function saveDraftPage2Action(
 
 /**
  * Uploads a raw applicant photo to Cloudinary, which auto-crops it to the
- * passport-style 7:9 box using face detection (c_thumb + g_face). Stores
- * the resulting Cloudinary public_id in `applicant_photo_url`.
+ * passport-style 7:9 box using face-aware gravity (c_thumb + g_face).
+ * Stores the resulting Cloudinary public_id in `applicant_photo_url`.
  *
- * Returns `faceDetected: false` when Cloudinary couldn't find a face so
- * the wizard can warn the applicant (auto-crop falls back to centre, which
- * is rarely usable for a passport-style photo).
+ * Returns the auto-cropped delivery URL so the wizard can show the exact
+ * image that will land on the PDF — the applicant verifies visually
+ * instead of relying on a face-detection metadata flag (paid add-on).
  */
 export async function uploadPhotoAction(
   rawToken: string,
   fileBuffer: ArrayBuffer,
   contentType: string,
-): Promise<ActionResult & { faceDetected?: boolean; previewUrl?: string }> {
+): Promise<ActionResult & { previewUrl?: string }> {
   if (!tokenInput.safeParse({ rawToken }).success) return { ok: false, error: "Bad token." };
   const auth = await authorise(rawToken);
   if (!auth.ok) return { ok: false, error: auth.error };
@@ -131,14 +131,9 @@ export async function uploadPhotoAction(
     applicationId: appId,
     branchId: auth.verify.magicLink.branch_id,
     eventType: "PHOTO_UPLOADED",
-    metadata: { face_detected: uploaded.faceDetected },
   });
   revalidatePath(`/apply/${rawToken}`);
-  return {
-    ok: true,
-    faceDetected: uploaded.faceDetected,
-    previewUrl: uploaded.deliveryUrl,
-  };
+  return { ok: true, previewUrl: uploaded.deliveryUrl };
 }
 
 export async function uploadNricAction(

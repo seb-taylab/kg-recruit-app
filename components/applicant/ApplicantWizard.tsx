@@ -299,13 +299,13 @@ export function ApplicantWizard(props: ApplicantWizardProps) {
 
   /**
    * Uploads the raw photo to Cloudinary (via the server action) and
-   * returns the auto-cropped preview URL + face-detection flag so the
-   * PhotoStep can show the result the applicant will actually see on the
-   * PDF — no second manual crop step required.
+   * returns the auto-cropped preview URL so the PhotoStep can show the
+   * result the applicant will actually see on the PDF — no second manual
+   * crop step required.
    */
   async function handlePhotoUpload(
     blob: Blob,
-  ): Promise<{ ok: boolean; previewUrl?: string; faceDetected?: boolean; error?: string }> {
+  ): Promise<{ ok: boolean; previewUrl?: string; error?: string }> {
     const buf = await blob.arrayBuffer();
     const result = await uploadPhotoAction(rawToken, buf, "image/jpeg");
     if (!result.ok) {
@@ -313,18 +313,8 @@ export function ApplicantWizard(props: ApplicantWizardProps) {
       return { ok: false, error: result.error };
     }
     setPhotoSaved(true);
-    if (result.faceDetected === false) {
-      toast.warning(
-        "Photo saved, but we couldn't find a face — retake if it doesn't look right.",
-      );
-    } else {
-      toast.success("Photo saved");
-    }
-    return {
-      ok: true,
-      previewUrl: result.previewUrl,
-      faceDetected: result.faceDetected,
-    };
+    toast.success("Photo saved");
+    return { ok: true, previewUrl: result.previewUrl };
   }
 
   async function handleNricUpload(side: "front" | "back", file: File) {

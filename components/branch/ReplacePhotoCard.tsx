@@ -50,7 +50,7 @@ export function ReplacePhotoCard({
 
   async function handleCroppedBlob(
     blob: Blob,
-  ): Promise<{ ok: boolean; previewUrl?: string; faceDetected?: boolean; error?: string }> {
+  ): Promise<{ ok: boolean; previewUrl?: string; error?: string }> {
     setError(null);
     const photoBase64 = await blobToBase64(blob);
     const result = await replacePhotoAction({ applicationId, photoBase64 });
@@ -58,11 +58,7 @@ export function ReplacePhotoCard({
       toast.success("Photo replaced.");
       setOpen(false);
       router.refresh();
-      // Cloudinary auto-crops via the action; the router refresh re-fetches
-      // the new currentPhotoUrl. PhotoStep's "done" preview comes from the
-      // returned URL — we don't have it directly here, but the next render
-      // shows the new currentPhotoUrl thumbnail and that's the truth.
-      return { ok: true, previewUrl: result.previewUrl, faceDetected: result.faceDetected };
+      return { ok: true, previewUrl: result.previewUrl };
     }
     setError(result.error ?? "Couldn't save the photo — try again in a minute.");
     return { ok: false, error: result.error };

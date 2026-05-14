@@ -24,12 +24,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 interface PhotoStepProps {
   initialUrl: string | null;
   /**
-   * Upload + auto-crop handler. Returns the auto-cropped preview URL plus
-   * whether Cloudinary's face detector found a face in the photo.
+   * Upload + auto-crop handler. Returns the auto-cropped preview URL so
+   * the wizard can show the exact image that will land on the PDF.
    */
   onCroppedBlob: (
     blob: Blob,
-  ) => Promise<{ ok: boolean; previewUrl?: string; faceDetected?: boolean; error?: string }>;
+  ) => Promise<{ ok: boolean; previewUrl?: string; error?: string }>;
 }
 
 type Mode = "idle" | "upload" | "camera" | "done";
@@ -39,8 +39,6 @@ export function PhotoStep({ initialUrl, onCroppedBlob }: PhotoStepProps) {
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(initialUrl);
   const [cameraError, setCameraError] = React.useState<string | null>(null);
   const [uploading, setUploading] = React.useState(false);
-  // True when Cloudinary couldn't find a face — surfaces a retake hint.
-  const [noFaceWarning, setNoFaceWarning] = React.useState(false);
   // True once the live preview has decoded its first frame — gates Snap so
   // it never captures a 0×0 or pre-render-empty frame.
   const [cameraReady, setCameraReady] = React.useState(false);
@@ -107,7 +105,6 @@ export function PhotoStep({ initialUrl, onCroppedBlob }: PhotoStepProps) {
   async function uploadBlob(blob: Blob) {
     setUploading(true);
     setCameraError(null);
-    setNoFaceWarning(false);
     try {
       const result = await onCroppedBlob(blob);
       if (!result.ok) {
@@ -115,7 +112,6 @@ export function PhotoStep({ initialUrl, onCroppedBlob }: PhotoStepProps) {
         return;
       }
       setPreviewUrl(result.previewUrl ?? null);
-      setNoFaceWarning(result.faceDetected === false);
       setMode("done");
     } finally {
       setUploading(false);
@@ -164,7 +160,6 @@ export function PhotoStep({ initialUrl, onCroppedBlob }: PhotoStepProps) {
   function reset() {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
-    setNoFaceWarning(false);
     setMode("idle");
   }
 
@@ -243,26 +238,17 @@ export function PhotoStep({ initialUrl, onCroppedBlob }: PhotoStepProps) {
                 className="h-auto w-32 rounded-md border border-border"
               />
             </div>
-            {noFaceWarning ? (
-              <Alert variant="warning">
-                <AlertDescription>
-                  We couldn&rsquo;t find a face in this photo. If the cropped result
-                  above doesn&rsquo;t show your face clearly, retake with better lighting
-                  and your face centred.
-                </AlertDescription>
-              </Alert>
-            ) : (
-              <Alert variant="info">
-                <AlertDescription className="flex items-center gap-2">
-                  <CheckCircle2
-                    className="h-5 w-5 text-state-success"
-                    strokeWidth={1.5}
-                    aria-hidden="true"
-                  />
-                  Photo saved + auto-cropped.
-                </AlertDescription>
-              </Alert>
-            )}
+            <Alert variant="info">
+              <AlertDescription className="flex items-center gap-2">
+                <CheckCircle2
+                  className="h-5 w-5 text-state-success"
+                  strokeWidth={1.5}
+                  aria-hidden="true"
+                />
+                Photo saved + auto-cropped. If the result above doesn&rsquo;t show
+                your face clearly, retake.
+              </AlertDescription>
+            </Alert>
             <Button
               type="button"
               variant="outline"

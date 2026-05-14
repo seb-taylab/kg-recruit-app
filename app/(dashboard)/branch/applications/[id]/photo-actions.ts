@@ -20,7 +20,6 @@ export interface ActionResult {
   ok: boolean;
   error?: string;
   previewUrl?: string;
-  faceDetected?: boolean;
 }
 
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -107,7 +106,6 @@ export async function replacePhotoAction(
     metadata: {
       public_id: uploaded.publicId,
       bytes: bytes.byteLength,
-      face_detected: uploaded.faceDetected,
       prior_status: app.status,
     },
   });
@@ -121,9 +119,5 @@ export async function replacePhotoAction(
   });
 
   revalidatePath(`/branch/applications/${app.id}`);
-  return {
-    ok: true,
-    previewUrl: uploaded.deliveryUrl,
-    faceDetected: uploaded.faceDetected,
-  };
+  return { ok: true, previewUrl: uploaded.deliveryUrl };
 }

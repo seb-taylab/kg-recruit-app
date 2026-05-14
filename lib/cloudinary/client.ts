@@ -28,14 +28,18 @@ export interface UploadedPhoto {
   publicId: string;
   /** Auto-cropped delivery URL ready to embed in the PDF. */
   deliveryUrl: string;
-  /** True when Cloudinary detected at least one face during analysis. */
-  faceDetected: boolean;
 }
 
 export async function uploadApplicantPhoto(
   bytes: Buffer,
   applicationId: string,
 ): Promise<UploadedPhoto> {
+  // `gravity: "face"` is Cloudinary's built-in face-aware crop and IS free.
+  // The explicit `detection: "adv_face"` add-on (which returns a faces[]
+  // metadata array) requires a paid subscription, so we don't ask for it
+  // — the auto-crop is the primary value. If no face is found, c_thumb +
+  // g_face falls back to a centre crop. UAT users who get a bad crop can
+  // retake; we'll track misframe rate by counting PHOTO_REPLACED events.
   const result = (await cloudinary.uploader.upload(
     `data:image/jpeg;base64,${bytes.toString("base64")}`,
     {
@@ -44,10 +48,6 @@ export async function uploadApplicantPhoto(
       overwrite: true,
       invalidate: true,
       resource_type: "image",
-      // detection=adv_face returns a `faces` array in the response so we can
-      // tell the applicant up-front if the photo wasn't usable.
-      detection: "adv_face",
-      // Eager-transform so the first PDF embed doesn't pay a JIT cost.
       eager: [
         {
           width: OUTPUT_WIDTH,
@@ -64,7 +64,6 @@ export async function uploadApplicantPhoto(
   return {
     publicId: result.public_id,
     deliveryUrl: applicantPhotoUrl(result.public_id),
-    faceDetected: Array.isArray(result.faces) && result.faces.length > 0,
   };
 }
 
