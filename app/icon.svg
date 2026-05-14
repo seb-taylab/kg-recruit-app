@@ -1,24 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-15 0 130 130" role="img" aria-label="PAP">
-  <title>People's Action Party (PAP)</title>
-  <defs>
-    <mask id="papRingMask">
-      <rect x="-15" y="0" width="130" height="130" fill="white"/>
-      <!-- Bolt silhouette (thickened) cuts a clean channel through the blue ring -->
-      <path
-        d="M 62 4 L 26 62 L 48 62 L 40 126 L 74 64 L 54 64 Z"
-        fill="black"
-        stroke="black"
-        stroke-width="12"
-        stroke-linejoin="round"
-      />
-    </mask>
-  </defs>
-  <!-- Blue broken ring (PAP blue) -->
-  <circle cx="50" cy="65" r="44" fill="none" stroke="#0052A1" stroke-width="13" mask="url(#papRingMask)"/>
-  <!-- Red lightning bolt (PAP red) -->
-  <path
-    d="M 62 4 L 26 62 L 48 62 L 40 126 L 74 64 L 54 64 Z"
-    fill="#EF3340"
-    stroke-linejoin="round"
-  />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-25 0 158.75 158.75" role="img" aria-label="People's Action Party (PAP)">
+  <title>People's Action Party</title>
+  <path d="m33.328,131.239c-19.588,-8.26,-33.328,-27.636,-33.328,-50.239c0,-26.348,18.672,-48.313,43.513,-53.394l-4.757,21.571l-.002,-.004c-11.708,5.802,-19.754,17.872,-19.754,31.827c0,14.377,8.541,26.755,20.827,32.337l-6.496,17.902l6.496,-17.902" fill="#0052A1"/>
+  <path d="m75.005,30.485c19.942,8.098,33.995,27.657,33.995,50.515c0,30.112,-24.388,54.5,-54.5,54.5c-3.272,0,-6.118,-.288,-9.231,-.84v.06l10.569,-18.249v.015c19.14,-.538,34.162,-16.215,34.162,-35.486c0,-14.741,-8.979,-27.38,-21.768,-32.748h-.003l6.833,-17.739" fill="#0052A1"/>
+  <polygon fill="#EA312D" points="49.833 89.75 32.083 89.75 53.333 0 82.333 0 58.333 68.75 80.083 68.75 27.333 158.75"/>
 </svg>
