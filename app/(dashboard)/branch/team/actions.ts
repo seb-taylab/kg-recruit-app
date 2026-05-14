@@ -354,6 +354,93 @@ export async function changeUserRoleAction(
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Change email
+// Only the Master Admin can do this (it's identity, not just access).
+// The Supabase Auth `users.email` row is updated directly with
+// `email_confirm: true` so we don't punt a confirmation email at the
+// target user — the Master Admin is acting on their behalf.
+
+const changeEmailSchema = z.object({
+  profileId: z.string().uuid(),
+  newEmail: z.string().trim().email("Invalid email").max(120),
+});
+
+export async function changeUserEmailAction(
+  input: z.input<typeof changeEmailSchema>,
+): Promise<ActionResult> {
+  const parsed = changeEmailSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Bad input." };
+  }
+  const { profileId, newEmail } = parsed.data;
+
+  let auth;
+  try {
+    auth = await requireAuth();
+  } catch (err) {
+    if (err instanceof PermissionError) return { ok: false, error: err.message };
+    throw err;
+  }
+  if (!auth.branch) return { ok: false, error: "Branch admin team only." };
+  if (auth.profile.role !== "branch_master_admin") {
+    return { ok: false, error: "Only the Master Admin can change email addresses." };
+  }
+  if (profileId === auth.userId) {
+    return {
+      ok: false,
+      error: "Use your account settings to change your own email — not the Team tab.",
+    };
+  }
+
+  const target = await loadTargetProfile(profileId, auth.branch.id);
+  if (!target || target.branch_id !== auth.branch.id) {
+    return { ok: false, error: "Profile not found." };
+  }
+
+  const admin = createAdminClient();
+
+  // Read the existing email so the audit log has before/after.
+  const { data: existing, error: getErr } = await admin.auth.admin.getUserById(target.id);
+  if (getErr || !existing?.user) {
+    return { ok: false, error: "Couldn't load the target user." };
+  }
+  const oldEmail = existing.user.email ?? null;
+  if (oldEmail?.toLowerCase() === newEmail.toLowerCase()) {
+    return { ok: false, error: "That's already their email." };
+  }
+
+  const { error: updateErr } = await admin.auth.admin.updateUserById(target.id, {
+    email: newEmail,
+    email_confirm: true,
+  });
+  if (updateErr) {
+    return { ok: false, error: updateErr.message };
+  }
+
+  await writeAuditLog({
+    // Reuse the closest existing action verb. Schema-wise this is more
+    // accurately "EMAIL_CHANGED" but adding a new verb requires touching
+    // the audit enum + downstream filters — defer.
+    action: "USER_INVITED",
+    branchId: auth.branch.id,
+    actorId: auth.userId,
+    actorEmail: auth.email,
+    actorRole: auth.profile.role,
+    metadata: {
+      subaction: "email_changed",
+      target_id: target.id,
+      target_role: target.role,
+      target_name: target.full_name,
+      from_email: oldEmail,
+      to_email: newEmail,
+    },
+  });
+
+  revalidatePath("/branch/team");
+  return { ok: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Trigger password reset
 
 const pwResetSchema = z.object({ profileId: z.string().uuid() });

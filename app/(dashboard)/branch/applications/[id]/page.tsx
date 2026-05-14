@@ -21,6 +21,7 @@ import { ArchiveButton } from "@/components/branch/ArchiveButton";
 import { UnarchiveButton } from "@/components/branch/UnarchiveButton";
 import { ExtendTtlButton } from "@/components/branch/ExtendTtlButton";
 import { ReplacePhotoCard } from "@/components/branch/ReplacePhotoCard";
+import { ChairmanReminderCard } from "@/components/branch/ChairmanReminderCard";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   LinkHistory,
@@ -240,6 +241,13 @@ export default async function ApplicationDetailPage({
         currentPhotoUrl={currentPhotoUrl}
         status={app.status}
       />
+
+      {app.status === "PENDING_CHAIRMAN" && (
+        <ChairmanReminderCard
+          applicationId={app.id}
+          appBaseUrl={process.env.NEXT_PUBLIC_APP_URL ?? "https://kg.taylab.com"}
+        />
+      )}
 
       {app.status === "SENT_TO_HQ" && (
         <Card>

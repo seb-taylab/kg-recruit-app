@@ -101,6 +101,7 @@ export default async function TeamPage() {
                 isActive={p.is_active}
                 isSelf={p.id === auth.userId}
                 canChangeRole={isMaster}
+                canChangeEmail={isMaster}
                 canManage={canManageThis}
               />
             );
