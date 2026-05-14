@@ -56,6 +56,92 @@ import { SignaturePad } from "./SignaturePad";
 type WizardStep = "page1" | "page2" | "photo" | "nric" | "sign";
 
 /**
+ * Friendly label per applicantFullSchema field, used when surfacing
+ * server-side validation errors on the Sign step. Without these the
+ * applicant sees raw zod paths like "marital_status" and a default
+ * "Invalid input" message — useless for debugging.
+ */
+const FIELD_LABELS: Record<string, string> = {
+  nric_no: "NRIC",
+  surname: "Surname",
+  given_names: "Given names",
+  chinese_name: "Chinese characters",
+  home_address: "Home address",
+  postal_code: "Postal code",
+  housing_type: "Type of housing",
+  hdb_rooms: "HDB rooms",
+  date_of_birth: "Date of birth",
+  place_of_birth: "Place of birth",
+  race: "Race",
+  gender: "Gender",
+  marital_status: "Marital status",
+  tel_home: "Tel (home)",
+  tel_office: "Tel (office)",
+  tel_hp: "Mobile phone",
+  highest_edu: "Highest education",
+  written_languages: "Written languages",
+  spoken_languages: "Spoken languages",
+  facebook: "Facebook",
+  linkedin: "LinkedIn",
+  twitter: "Twitter",
+  blog: "Blog",
+  email: "Email",
+  occupation: "Occupation / designation",
+  organisation: "Organisation / company",
+  monthly_income: "Monthly income",
+  hobbies: "Hobbies",
+  trade_unions: "Trade unions",
+  associations: "Associations",
+  clubs: "Clubs",
+  ccc: "CCC",
+  ccmc: "CCMC",
+  rnc: "RNC",
+  grassroots: "Grassroots organisations",
+  consent_pdpa: "Agreement to Constitution + Privacy Policy",
+};
+
+const PAGE1_FIELDS = new Set([
+  "nric_no",
+  "surname",
+  "given_names",
+  "chinese_name",
+  "home_address",
+  "postal_code",
+  "housing_type",
+  "hdb_rooms",
+  "date_of_birth",
+  "place_of_birth",
+  "race",
+  "gender",
+  "marital_status",
+  "tel_home",
+  "tel_office",
+  "tel_hp",
+  "highest_edu",
+  "written_languages",
+  "spoken_languages",
+  "facebook",
+  "linkedin",
+  "twitter",
+  "blog",
+  "email",
+]);
+const PAGE2_FIELDS = new Set([
+  "occupation",
+  "organisation",
+  "monthly_income",
+  "hobbies",
+  "trade_unions",
+  "associations",
+  "clubs",
+  "ccc",
+  "ccmc",
+  "rnc",
+  "grassroots",
+  "consent_pdpa",
+]);
+
+/**
  * Loose shape — DB columns come back as plain strings (CHECK constraints
  * live in Postgres, not the row type). The wizard narrows them when seeding
  * react-hook-form.
@@ -237,11 +323,17 @@ export function ApplicantWizard(props: ApplicantWizardProps) {
   async function handleSignatureSubmit(dataUrl: string) {
     const result = await submitApplicantSignatureAction(rawToken, dataUrl);
     if (!result.ok) {
-      // Surface server-side field errors at the top of the wizard.
+      // Surface server-side field errors at the top of the wizard. We list
+      // EVERY failing field with a friendly label, plus which page it's on,
+      // so the applicant doesn't have to guess.
       if (result.fieldErrors) {
-        const firstField = Object.keys(result.fieldErrors)[0];
+        const lines = Object.entries(result.fieldErrors).map(([key, msg]) => {
+          const label = FIELD_LABELS[key] ?? key;
+          const where = PAGE1_FIELDS.has(key) ? "Step 1" : PAGE2_FIELDS.has(key) ? "Step 2" : null;
+          return where ? `• ${label} (${where}): ${msg}` : `• ${label}: ${msg}`;
+        });
         setServerError(
-          `Couldn't submit: ${result.fieldErrors[firstField]}. Go back and check the form fields.`,
+          `We couldn't submit yet. Please fix:\n${lines.join("\n")}`,
         );
       } else {
         setServerError(result.error ?? "Couldn't submit the signature.");
@@ -264,7 +356,9 @@ export function ApplicantWizard(props: ApplicantWizardProps) {
 
         {serverError && (
           <Alert variant="destructive">
-            <AlertDescription>{serverError}</AlertDescription>
+            <AlertDescription className="whitespace-pre-line">
+              {serverError}
+            </AlertDescription>
           </Alert>
         )}
 

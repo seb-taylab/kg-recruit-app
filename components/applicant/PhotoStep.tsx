@@ -27,6 +27,9 @@ export function PhotoStep({ initialUrl, onCroppedBlob }: PhotoStepProps) {
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(initialUrl);
   const [cameraError, setCameraError] = React.useState<string | null>(null);
   const [uploading, setUploading] = React.useState(false);
+  // True once the live preview has decoded its first frame — gates Snap so
+  // it never captures a 0×0 or pre-render-empty frame.
+  const [cameraReady, setCameraReady] = React.useState(false);
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const streamRef = React.useRef<MediaStream | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -41,15 +44,32 @@ export function PhotoStep({ initialUrl, onCroppedBlob }: PhotoStepProps) {
   // element. Without this two-step, videoRef.current is null when we try
   // to set srcObject inside startCamera() — the user sees a black box and
   // the snapshot captures nothing (videoWidth/Height are 0).
+  //
+  // ALSO: Snap is gated on `cameraReady` to avoid the canvas drawing a
+  // not-yet-decoded frame (the bug behind "Photo saved" landing on a
+  // black thumbnail). We flip cameraReady from the `playing` event so it
+  // matches what the browser actually has on screen.
   React.useEffect(() => {
     if (mode !== "camera") return;
     const stream = streamRef.current;
     const video = videoRef.current;
     if (!stream || !video) return;
+
+    setCameraReady(false);
+    const onPlaying = () => {
+      if (video.videoWidth > 0 && video.videoHeight > 0) setCameraReady(true);
+    };
+    video.addEventListener("playing", onPlaying);
+    video.addEventListener("loadeddata", onPlaying);
+
     video.srcObject = stream;
     video.play().catch(() => {
       setCameraError("Couldn't start the camera preview. Use Upload instead.");
     });
+    return () => {
+      video.removeEventListener("playing", onPlaying);
+      video.removeEventListener("loadeddata", onPlaying);
+    };
   }, [mode]);
 
   async function startCamera() {
@@ -73,7 +93,9 @@ export function PhotoStep({ initialUrl, onCroppedBlob }: PhotoStepProps) {
   function snapPhoto() {
     if (!videoRef.current) return;
     const v = videoRef.current;
-    if (!v.videoWidth || !v.videoHeight) {
+    // Belt-and-braces: button is already disabled when !cameraReady, but
+    // verify the frame buffer is real before drawing it.
+    if (!cameraReady || !v.videoWidth || !v.videoHeight || v.readyState < 2) {
       setCameraError("Camera isn't ready yet — wait a moment and try Snap again.");
       return;
     }
@@ -87,6 +109,7 @@ export function PhotoStep({ initialUrl, onCroppedBlob }: PhotoStepProps) {
     setSourceUrl(data);
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
+    setCameraReady(false);
     setMode("cropping");
   }
 
@@ -168,13 +191,16 @@ export function PhotoStep({ initialUrl, onCroppedBlob }: PhotoStepProps) {
               playsInline
               muted
             />
+            {!cameraReady && (
+              <p className="text-sm text-text-muted">Starting camera…</p>
+            )}
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button type="button" variant="outline" onClick={reset}>
                 Back
               </Button>
-              <Button type="button" onClick={snapPhoto}>
+              <Button type="button" onClick={snapPhoto} disabled={!cameraReady}>
                 <Camera className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
-                Snap
+                {cameraReady ? "Snap" : "Starting…"}
               </Button>
             </div>
           </div>

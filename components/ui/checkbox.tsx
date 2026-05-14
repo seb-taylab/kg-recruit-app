@@ -16,7 +16,11 @@ export const Checkbox = React.forwardRef<
   <CheckboxPrimitive.Root
     ref={ref}
     className={cn(
-      "peer h-5 w-5 shrink-0 rounded-sm border border-border bg-surface-input",
+      // Unchecked: 2px neutral-500 border on bg-surface-card so the box
+      // stays obvious on top of bg-surface-page wrappers (consent / signature
+      // cards). The old border-border + bg-surface-input combo disappeared
+      // against the same surface tone — users reported "no tick box".
+      "peer h-5 w-5 shrink-0 rounded-sm border-2 border-neutral-500 bg-surface-card",
       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus focus-visible:ring-offset-2",
       "disabled:cursor-not-allowed disabled:opacity-50",
       "data-[state=checked]:border-brand-red data-[state=checked]:bg-brand-red data-[state=checked]:text-text-inverse",

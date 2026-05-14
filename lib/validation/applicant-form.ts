@@ -34,18 +34,28 @@ const inThePast = (val: string) => {
   return d.getTime() < Date.now();
 };
 
+// Helpers accept `null` from the DB row in addition to undefined / "". When
+// the schema runs against an applications row at submit time, missing
+// optional fields come back as null — without the `.nullable()` zod would
+// reject them with the default "Invalid input" message and the applicant
+// would see a useless top-level error.
 const optionalString = (max: number) =>
   z
     .string()
     .max(max)
+    .nullable()
     .optional()
-    .or(z.literal("").transform(() => undefined));
+    .transform((v) => (v === null || v === "" ? undefined : v));
 
 const optionalPhone = z
   .string()
-  .regex(PHONE_REGEX, "Phone format isn't right — 8 digits, +65 optional")
+  .nullable()
   .optional()
-  .or(z.literal("").transform(() => undefined));
+  .transform((v) => (v === null || v === "" ? undefined : v))
+  .refine(
+    (v) => v === undefined || PHONE_REGEX.test(v),
+    "Phone format isn't right — 8 digits, +65 optional",
+  );
 
 export const applicantPage1Schema = z.object({
   nric_no: z
@@ -68,7 +78,9 @@ export const applicantPage1Schema = z.object({
     .int()
     .min(1, "1 minimum")
     .max(9, "9 maximum")
-    .optional(),
+    .nullable()
+    .optional()
+    .transform((v) => (v === null ? undefined : v)),
   date_of_birth: z
     .string()
     .regex(ISO_DATE, "Pick a date")
@@ -113,7 +125,12 @@ export const applicantPage2Schema = z.object({
     .min(1, "This field is required")
     .max(100, "Employer / organisation is too long"),
   monthly_income: z.enum(FORM_TICK_VALUES.monthlyIncome, { message: "Pick a bracket" }),
-  hobbies: z.array(z.string().max(40, "Hobby name is too long")).max(3, "Up to 3"),
+  hobbies: z
+    .array(z.string().max(40, "Hobby name is too long"))
+    .max(3, "Up to 3")
+    .nullable()
+    .optional()
+    .transform((v) => v ?? []),
   // Membership rows wrap to 2 lines on the PDF, so we can afford more room
   // than the social row (single-line) but still cap so it stays readable.
   trade_unions: optionalString(80),
