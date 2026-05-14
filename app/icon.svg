@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-15 0 130 130" role="img" aria-label="PAP">
+  <title>People's Action Party (PAP)</title>
+  <defs>
+    <mask id="papRingMask">
+      <rect x="-15" y="0" width="130" height="130" fill="white"/>
+      <!-- Bolt silhouette (thickened) cuts a clean channel through the blue ring -->
+      <path
+        d="M 62 4 L 26 62 L 48 62 L 40 126 L 74 64 L 54 64 Z"
+        fill="black"
+        stroke="black"
+        stroke-width="12"
+        stroke-linejoin="round"
+      />
+    </mask>
+  </defs>
+  <!-- Blue broken ring (PAP blue) -->
+  <circle cx="50" cy="65" r="44" fill="none" stroke="#0052A1" stroke-width="13" mask="url(#papRingMask)"/>
+  <!-- Red lightning bolt (PAP red) -->
+  <path
+    d="M 62 4 L 26 62 L 48 62 L 40 126 L 74 64 L 54 64 Z"
+    fill="#EF3340"
+    stroke-linejoin="round"
+  />
+</svg>
