@@ -58,10 +58,18 @@ const optionalPhone = z
   );
 
 export const applicantPage1Schema = z.object({
+  // NRIC is stored canonically uppercase. The wizard input also uppercases
+  // live, but we transform here too so any other caller (draft autosave
+  // with .partial(), future scripts) normalises before the regex fires —
+  // downstream code can always assume uppercase.
   nric_no: z
     .string()
     .min(1, "This field is required")
-    .regex(NRIC_REGEX, "NRIC format: letter + 7 digits + letter, e.g. S1234567A"),
+    .transform((v) => v.toUpperCase())
+    .refine(
+      (v) => NRIC_REGEX.test(v),
+      "NRIC format: letter + 7 digits + letter, e.g. S1234567A",
+    ),
   surname: z.string().min(1, "This field is required").max(40, "Surname is too long"),
   given_names: z.string().min(1, "This field is required").max(60, "Given names are too long"),
   chinese_name: optionalString(30),

@@ -389,7 +389,30 @@ export function ApplicantWizard(props: ApplicantWizardProps) {
                   helper="Used for membership verification"
                   error={page1Form.formState.errors.nric_no?.message}
                 >
-                  <Input id="nric_no" placeholder="S1234567A" {...page1Form.register("nric_no")} />
+                  {(() => {
+                    // Auto-uppercase as the user types. The wrapper mutates
+                    // e.target.value BEFORE RHF captures it, so both the DOM
+                    // and the form state stay uppercased in lock-step.
+                    // autoCapitalize="characters" handles mobile keyboards.
+                    const reg = page1Form.register("nric_no");
+                    return (
+                      <Input
+                        id="nric_no"
+                        placeholder="S1234567A"
+                        autoCapitalize="characters"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        maxLength={9}
+                        className="uppercase"
+                        {...reg}
+                        onChange={(e) => {
+                          const upper = e.target.value.toUpperCase();
+                          if (e.target.value !== upper) e.target.value = upper;
+                          reg.onChange(e);
+                        }}
+                      />
+                    );
+                  })()}
                 </Field>
                 <Field
                   id="surname"
