@@ -1,8 +1,9 @@
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { requireAuth } from "@/lib/auth/get-user";
-import { isBranchAdminTeam } from "@/types/database";
+import { isBranchAdminTeam, isBranchRole } from "@/types/database";
 import { createClient } from "@/lib/supabase/server";
 import { formatDateDDMMMYYYY } from "@/lib/format/date";
 import { formatPhoneDisplay, maskPhone } from "@/lib/format/phone";
@@ -88,9 +89,13 @@ export default async function ApplicationDetailPage({
   searchParams: Promise<{ token?: string }>;
 }) {
   const auth = await requireAuth();
-  if (!auth.branch || !isBranchAdminTeam(auth.profile.role)) {
+  if (!auth.branch || !isBranchRole(auth.profile.role)) {
     redirect("/branch");
   }
+  // Admin team gets actions (Archive / Replace photo / Forward to chairman /
+  // HQ outcome / etc.). Chairman gets read-only — they review here before
+  // signing on /branch/sign/[id].
+  const isAdminTeam = isBranchAdminTeam(auth.profile.role);
   const { id } = await params;
   const { token: rawToken } = await searchParams;
 
@@ -217,9 +222,11 @@ export default async function ApplicationDetailPage({
                 &ldquo;{app.archive_reason}&rdquo;
               </p>
             )}
-            <div className="flex justify-end">
-              <UnarchiveButton applicationId={app.id} />
-            </div>
+            {isAdminTeam && (
+              <div className="flex justify-end">
+                <UnarchiveButton applicationId={app.id} />
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -241,24 +248,49 @@ export default async function ApplicationDetailPage({
         </Card>
       )}
 
-      {nricRequired(app.place_of_birth) && (
+      {/* NRIC scans + admin override surfaces are Branch-Admin-only. The
+          Chairman gets a thinner read-only view of the application — they
+          come here to review before going to /branch/sign/[id] to sign. */}
+      {isAdminTeam && nricRequired(app.place_of_birth) && (
         <NricScansCard applicationId={app.id} purgedAt={app.nric_purged_at} />
       )}
 
-      <ReplacePhotoCard
-        applicationId={app.id}
-        currentPhotoUrl={currentPhotoUrl}
-        status={app.status}
-      />
+      {isAdminTeam && (
+        <ReplacePhotoCard
+          applicationId={app.id}
+          currentPhotoUrl={currentPhotoUrl}
+          status={app.status}
+        />
+      )}
 
-      {app.status === "PENDING_CHAIRMAN" && (
+      {!isAdminTeam && app.status === "PENDING_CHAIRMAN" && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Ready to sign</CardTitle>
+            <CardDescription>
+              When you&rsquo;re happy with what you&rsquo;ve reviewed above, head to the
+              signing screen.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link
+              href={`/branch/sign/${app.id}`}
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-brand-red px-4 py-2 text-base font-semibold text-text-inverse transition-colors duration-fast hover:opacity-90"
+            >
+              Sign this application
+            </Link>
+          </CardContent>
+        </Card>
+      )}
+
+      {isAdminTeam && app.status === "PENDING_CHAIRMAN" && (
         <ChairmanReminderCard
           applicationId={app.id}
           appBaseUrl={process.env.NEXT_PUBLIC_APP_URL ?? "https://kg.taylab.com"}
         />
       )}
 
-      {app.status === "SENT_TO_HQ" && (
+      {isAdminTeam && app.status === "SENT_TO_HQ" && (
         <Card>
           <CardHeader>
             <CardTitle>Record HQ outcome</CardTitle>
@@ -304,9 +336,11 @@ export default async function ApplicationDetailPage({
                 </div>
               )}
             </dl>
-            <div className="flex justify-end">
-              <ReverseHqOutcomeButton applicationId={app.id} fromStatus="COMPLETED" />
-            </div>
+            {isAdminTeam && (
+              <div className="flex justify-end">
+                <ReverseHqOutcomeButton applicationId={app.id} fromStatus="COMPLETED" />
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -342,14 +376,16 @@ export default async function ApplicationDetailPage({
                 </div>
               )}
             </dl>
-            <div className="flex justify-end">
-              <ReverseHqOutcomeButton applicationId={app.id} fromStatus="HQ_REJECTED" />
-            </div>
+            {isAdminTeam && (
+              <div className="flex justify-end">
+                <ReverseHqOutcomeButton applicationId={app.id} fromStatus="HQ_REJECTED" />
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
 
-      {app.status === "PENDING_REFERRAL_ASSIGNMENT" ? (
+      {isAdminTeam && (app.status === "PENDING_REFERRAL_ASSIGNMENT" ? (
         <Card>
           <CardHeader>
             <CardTitle>Assign a referral</CardTitle>
@@ -462,11 +498,11 @@ export default async function ApplicationDetailPage({
               : "Open this page right after creating the invite, or re-mint a link (Re-mint UI lands in a later step)."}
           </AlertDescription>
         </Alert>
-      )}
+      ))}
 
-      <LinkHistory deliveries={deliveries} />
+      {isAdminTeam && <LinkHistory deliveries={deliveries} />}
 
-      {app.status !== "ARCHIVED" && (
+      {isAdminTeam && app.status !== "ARCHIVED" && (
         <div className="flex justify-end pt-4">
           <ArchiveButton applicationId={app.id} />
         </div>

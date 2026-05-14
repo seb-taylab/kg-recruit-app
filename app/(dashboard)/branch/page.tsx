@@ -1,26 +1,53 @@
 /**
- * Branch dashboard root — Step 2 shell. Verifies RLS scoping by querying
- * profiles + applications and showing the counts the user can actually see.
+ * Branch dashboard root.
  *
- * Acceptance: this page should render zero leaks across branches in Test 2
- * once a second branch is seeded.
+ * Role-aware overview: branch admin team sees inbox / history counts and
+ * an HQ-email-missing nag (only meaningful for them); the Chairman sees
+ * the number of applications pending their signature.
  */
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import Link from "next/link";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { requireAuth } from "@/lib/auth/get-user";
 import { createClient } from "@/lib/supabase/server";
+
+const INBOX_STATUSES = [
+  "PENDING_REFERRAL_ASSIGNMENT",
+  "PENDING_BRANCH_ADMIN_REVIEW",
+  "READY_TO_SEND",
+  "SENT_TO_HQ",
+];
 
 export default async function BranchOverviewPage() {
   const auth = await requireAuth();
   const supabase = await createClient();
+  const isChairman = auth.profile.role === "branch_chairman";
 
-  const [{ count: teamCount }, { count: appCount }] = await Promise.all([
-    supabase.from("profiles").select("*", { count: "exact", head: true }),
-    supabase.from("applications").select("*", { count: "exact", head: true }),
-  ]);
+  const [{ count: inboxCount }, { count: pendingMyCount }, { count: historyCount }] =
+    await Promise.all([
+      supabase
+        .from("applications")
+        .select("*", { count: "exact", head: true })
+        .in("status", INBOX_STATUSES),
+      supabase
+        .from("applications")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "PENDING_CHAIRMAN"),
+      supabase
+        .from("applications")
+        .select("*", { count: "exact", head: true })
+        .in("status", ["COMPLETED", "HQ_REJECTED", "ARCHIVED"]),
+    ]);
 
   const branchName = auth.branch?.name ?? "(no branch)";
-  const hqEmailMissing = auth.branch && !auth.branch.hq_email;
+  const hqEmailMissing = auth.branch && !auth.branch.hq_email && !isChairman;
 
   return (
     <div className="flex flex-col gap-6">
@@ -28,87 +55,89 @@ export default async function BranchOverviewPage() {
         <h1 className="text-3xl font-bold leading-tight text-text-primary">
           {branchName}
         </h1>
-        <p className="text-text-secondary">Welcome back, {auth.profile.full_name ?? auth.email}.</p>
+        <p className="text-text-secondary">
+          Welcome back, {auth.profile.full_name ?? auth.email}.
+        </p>
       </header>
 
       {hqEmailMissing && (
         <Alert variant="warning">
           <AlertTitle>Set HQ email in Branch Settings</AlertTitle>
           <AlertDescription>
-            Branch HQ email is required before any application can be sent to HQ.
+            Branch HQ email is required before any application can be sent to HQ.{" "}
+            <Link href="/branch/settings" className="font-medium underline">
+              Configure now
+            </Link>
+            .
           </AlertDescription>
         </Alert>
       )}
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardDescription>RLS verification</CardDescription>
-            <CardTitle>Branch team members</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold text-text-primary">{teamCount ?? 0}</p>
-            <p className="mt-1 text-sm text-text-muted">
-              Only same-branch profiles are visible to you.
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardDescription>RLS verification</CardDescription>
-            <CardTitle>Applications visible</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold text-text-primary">{appCount ?? 0}</p>
-            <p className="mt-1 text-sm text-text-muted">
-              Step 3+ will populate this. Today it should be 0 across branches.
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardDescription>You are</CardDescription>
-            <CardTitle>{roleLabel(auth.profile.role)}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-text-secondary">
-              Position: <span className="font-medium">{auth.profile.position ?? "—"}</span>
-            </p>
-          </CardContent>
-        </Card>
-      </section>
+        {isChairman ? (
+          <Card>
+            <CardHeader>
+              <CardDescription>Awaiting your signature</CardDescription>
+              <CardTitle>Pending my signature</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <p className="text-3xl font-bold text-text-primary">
+                {pendingMyCount ?? 0}
+              </p>
+              <Button asChild>
+                <Link href="/branch/sign">Open queue</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardDescription>Needs action</CardDescription>
+              <CardTitle>Inbox</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <p className="text-3xl font-bold text-text-primary">
+                {inboxCount ?? 0}
+              </p>
+              <Button asChild>
+                <Link href="/branch/inbox">Open inbox</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
-      <section>
         <Card>
           <CardHeader>
-            <CardTitle>Step 2 status</CardTitle>
-            <CardDescription>Auth shell + RLS scaffolding</CardDescription>
+            <CardDescription>All applications</CardDescription>
+            <CardTitle>Journey</CardTitle>
           </CardHeader>
-          <CardContent className="text-sm text-text-secondary">
-            <p>
-              You are signed in with branch-scoped RLS. The invite flow, applicant form, signatures,
-              and dashboard tabs go live from Step 3 onwards.
+          <CardContent className="flex flex-col gap-3">
+            <p className="text-3xl font-bold text-text-primary">
+              {(inboxCount ?? 0) + (pendingMyCount ?? 0) + (historyCount ?? 0)}
             </p>
+            <Button asChild variant="outline">
+              <Link href="/branch/journey">Browse all</Link>
+            </Button>
           </CardContent>
         </Card>
+
+        {!isChairman && (
+          <Card>
+            <CardHeader>
+              <CardDescription>Closed</CardDescription>
+              <CardTitle>History</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <p className="text-3xl font-bold text-text-primary">
+                {historyCount ?? 0}
+              </p>
+              <Button asChild variant="outline">
+                <Link href="/branch/history">View history</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </section>
     </div>
   );
-}
-
-function roleLabel(role: string) {
-  switch (role) {
-    case "branch_master_admin":
-      return "Branch Master Admin";
-    case "branch_admin":
-      return "Branch Admin";
-    case "branch_team_member":
-      return "Branch Team Member";
-    case "branch_chairman":
-      return "Branch Chairman";
-    case "taylab_staff":
-      return "Taylab Staff";
-    default:
-      return role;
-  }
 }

@@ -254,19 +254,19 @@ export const formCoordinates: FormCoordinates = {
     // Values render on the line ABOVE the labels (label sits below the line).
     // Extra +3pt clearance keeps descenders (g, p, q, y) above the line.
     applicantDate: { x: 70, y: 359 },
-    applicantSignature: { x: 260, y: 350, width: 280, height: 22 },
+    applicantSignature: { x: 250, y: 355, width: 280, height: 22 },
 
     // Referral: name (66, 306), membership (66, 286), years (66, 266), date+sig labels at y=220.
     referralName: { x: 160, y: 309, maxWidth: 270 },
     referralMembershipNo: { x: 160, y: 289, maxWidth: 270 },
     referralYearsKnown: { x: 215, y: 269, maxWidth: 60 },
     referralDate: { x: 70, y: 235 },
-    referralSignature: { x: 260, y: 226, width: 280, height: 22 },
+    referralSignature: { x: 250, y: 231, width: 280, height: 22 },
 
     // Chairman: name (66, 182), years (66, 163), date+sig labels at y=115.
     chairmanName: { x: 200, y: 185, maxWidth: 235 },
     chairmanYearsKnown: { x: 215, y: 166, maxWidth: 60 },
     chairmanDate: { x: 70, y: 131 },
-    chairmanSignature: { x: 260, y: 122, width: 280, height: 22 },
+    chairmanSignature: { x: 250, y: 127, width: 280, height: 22 },
   },
 };
