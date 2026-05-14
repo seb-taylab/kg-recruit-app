@@ -32,11 +32,10 @@ export function drawWrappedText(
   const { x, y, maxWidth, lineHeight, maxLines = 1, font, size } = opts;
   if (!text) return { linesDrawn: 0, truncated: false };
 
-  // WinAnsi safety — see lib/pdf/generate.ts text() helper.
-  const safeText = text.replace(/[^\x00-\xff]/g, "");
-  if (!safeText) return { linesDrawn: 0, truncated: false };
-
-  const words = safeText.split(/\s+/).filter(Boolean);
+  // The caller is responsible for picking a font that covers every char in
+  // `text`. generate.ts swaps to the Noto Sans SC subset before calling
+  // here when the value contains CJK / non-WinAnsi characters.
+  const words = text.split(/\s+/).filter(Boolean);
   const lines: string[] = [];
   let current = "";
   let truncated = false;

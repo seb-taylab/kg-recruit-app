@@ -15,12 +15,22 @@
  */
 import "server-only";
 import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { formCoordinates, type Coord } from "@/lib/pdf/form-coordinates";
 import { FORM_TICK_VALUES, type TickGroupKeys } from "@/lib/pdf/form-coordinates-keys";
 import { formatDateDDMMYYYY } from "@/lib/format/date";
 import { drawWrappedText } from "@/lib/pdf/text-wrap";
+
+/**
+ * Any non-WinAnsi character → use the CJK font. The chinese-simplified
+ * Noto Sans subset also covers basic Latin, so mixed strings like
+ * "TAY 郑家翔 sebastian" render through a single font without chunking.
+ * (See scripts/smoke-cjk-font.mjs for the cover check.)
+ */
+const NON_WINANSI = /[^\x00-\xff]/;
+const hasNonWinAnsi = (s: string) => NON_WINANSI.test(s);
 
 export interface ApplicationData {
   branch_name: string;
@@ -95,8 +105,15 @@ const TICK_STROKE_WIDTH = 1.5;
  */
 export async function generateFilledMembershipPDF(input: PdfGenerateInput): Promise<Uint8Array> {
   const templatePath = path.join(process.cwd(), "public", "forms", "MF_V1.0_blank.pdf");
-  const templateBytes = await fs.readFile(templatePath);
+  const cjkFontPath = path.join(process.cwd(), "public", "fonts", "NotoSansSC-Subset.ttf");
+  const [templateBytes, cjkFontBytes] = await Promise.all([
+    fs.readFile(templatePath),
+    fs.readFile(cjkFontPath),
+  ]);
   const pdfDoc = await PDFDocument.load(templateBytes);
+  // Register fontkit BEFORE embedding any custom font — required by pdf-lib
+  // for non-StandardFont embedding (the CJK Noto Sans subset).
+  pdfDoc.registerFontkit(fontkit);
   const pages = pdfDoc.getPages();
   if (pages.length < 2) {
     throw new Error(
@@ -106,17 +123,35 @@ export async function generateFilledMembershipPDF(input: PdfGenerateInput): Prom
   const [page1, page2] = pages;
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  // subset:true keeps the output PDF small — only glyphs actually used in
+  // drawText calls get embedded. The TTF source is ~2.5MB; a typical
+  // PDF ends up adding ~10–20KB of CJK glyphs.
+  const cjkFont = await pdfDoc.embedFont(cjkFontBytes, { subset: true });
+  /**
+   * Per-field text renderer with auto font swap. ASCII / Latin-1 strings
+   * render with Helvetica (cheaper to embed); strings containing any CJK
+   * or other non-WinAnsi char flip to the Noto Sans SC subset for the
+   * whole string. The subset also covers basic Latin so mixed names like
+   * "TAY 郑家翔 sebastian" render through a single font without chunking.
+   */
+  const drawField = (
+    page: PDFPage,
+    value: string | null | undefined,
+    coord: Coord,
+  ) => text(page, font, value, coord, cjkFont);
 
   const app = input.application;
 
   // ─── Page 1 ────────────────────────────────────────────────────────
-  text(page1, font, app.branch_name, formCoordinates.page1.branch);
-  text(page1, font, app.nric_no, formCoordinates.page1.nricNo);
-  text(page1, font, app.chinese_name, formCoordinates.page1.chineseName);
+  drawField(page1, app.branch_name, formCoordinates.page1.branch);
+  drawField(page1, app.nric_no, formCoordinates.page1.nricNo);
+  drawField(page1, app.chinese_name, formCoordinates.page1.chineseName);
 
-  drawNameWithUnderlinedSurname(page1, font, app, formCoordinates.page1.name);
+  drawNameWithUnderlinedSurname(page1, font, cjkFont, app, formCoordinates.page1.name);
 
-  // home_address wraps to up to 2 lines.
+  // home_address wraps to up to 2 lines. Pre-pick the font so a Chinese
+  // address renders via the CJK subset (the wrap helper itself takes one
+  // font and assumes it can render every char).
   if (app.home_address) {
     drawWrappedText(page1, app.home_address, {
       x: formCoordinates.page1.homeAddress.x,
@@ -124,11 +159,11 @@ export async function generateFilledMembershipPDF(input: PdfGenerateInput): Prom
       maxWidth: formCoordinates.page1.homeAddress.maxWidth,
       lineHeight: formCoordinates.page1.homeAddress.lineHeight,
       maxLines: 2,
-      font,
+      font: hasNonWinAnsi(app.home_address) ? cjkFont : font,
       size: FIELD_SIZE,
     });
   }
-  text(page1, font, app.postal_code, formCoordinates.page1.postalCode);
+  drawField(page1, app.postal_code, formCoordinates.page1.postalCode);
 
   // Housing: tick at the matched coordinate + write rooms count if HDB.
   if (app.housing_type) {
@@ -138,20 +173,20 @@ export async function generateFilledMembershipPDF(input: PdfGenerateInput): Prom
       ];
     if (coord) drawTick(page1, coord);
     if (app.housing_type === "HDB" && app.hdb_rooms != null) {
-      text(page1, font, String(app.hdb_rooms), formCoordinates.page1.hdbRooms);
+      drawField(page1, String(app.hdb_rooms), formCoordinates.page1.hdbRooms);
     }
   }
 
-  text(page1, font, formatDateDDMMYYYY(app.date_of_birth), formCoordinates.page1.dateOfBirth);
-  text(page1, font, app.place_of_birth, formCoordinates.page1.placeOfBirth);
+  drawField(page1, formatDateDDMMYYYY(app.date_of_birth), formCoordinates.page1.dateOfBirth);
+  drawField(page1, app.place_of_birth, formCoordinates.page1.placeOfBirth);
 
   drawTickFromMap(page1, formCoordinates.page1.race, app.race);
   drawTickFromMap(page1, formCoordinates.page1.gender, app.gender);
   drawTickFromMap(page1, formCoordinates.page1.maritalStatus, app.marital_status);
 
-  text(page1, font, app.tel_home, formCoordinates.page1.tel.home);
-  text(page1, font, app.tel_office, formCoordinates.page1.tel.office);
-  text(page1, font, app.tel_hp, formCoordinates.page1.tel.hp);
+  drawField(page1, app.tel_home, formCoordinates.page1.tel.home);
+  drawField(page1, app.tel_office, formCoordinates.page1.tel.office);
+  drawField(page1, app.tel_hp, formCoordinates.page1.tel.hp);
 
   drawTickFromMap(page1, formCoordinates.page1.education, app.highest_edu);
 
@@ -163,11 +198,11 @@ export async function generateFilledMembershipPDF(input: PdfGenerateInput): Prom
     drawTickFromMap(page1, formCoordinates.page1.languages.spoken, lang);
   }
 
-  text(page1, font, app.facebook, formCoordinates.page1.social.facebook);
-  text(page1, font, app.linkedin, formCoordinates.page1.social.linkedin);
-  text(page1, font, app.twitter, formCoordinates.page1.social.twitter);
-  text(page1, font, app.blog, formCoordinates.page1.social.blog);
-  text(page1, font, app.email, formCoordinates.page1.social.email);
+  drawField(page1, app.facebook, formCoordinates.page1.social.facebook);
+  drawField(page1, app.linkedin, formCoordinates.page1.social.linkedin);
+  drawField(page1, app.twitter, formCoordinates.page1.social.twitter);
+  drawField(page1, app.blog, formCoordinates.page1.social.blog);
+  drawField(page1, app.email, formCoordinates.page1.social.email);
 
   // Photo (top-right). Embed as JPEG; fall back gracefully on bad bytes.
   try {
@@ -183,26 +218,25 @@ export async function generateFilledMembershipPDF(input: PdfGenerateInput): Prom
   }
 
   // ─── Page 2 ────────────────────────────────────────────────────────
-  text(page2, font, app.occupation, formCoordinates.page2.occupation);
-  text(page2, font, app.organisation, formCoordinates.page2.organisation);
+  drawField(page2, app.occupation, formCoordinates.page2.occupation);
+  drawField(page2, app.organisation, formCoordinates.page2.organisation);
   drawTickFromMap(page2, formCoordinates.page2.monthlyIncome, app.monthly_income);
 
   for (let i = 0; i < Math.min((app.hobbies ?? []).length, 3); i++) {
-    text(page2, font, app.hobbies![i], formCoordinates.page2.hobbies[i]);
+    drawField(page2, app.hobbies![i], formCoordinates.page2.hobbies[i]);
   }
 
-  text(page2, font, app.trade_unions, formCoordinates.page2.tradeUnions);
-  text(page2, font, app.associations, formCoordinates.page2.associations);
-  text(page2, font, app.clubs, formCoordinates.page2.clubs);
-  text(page2, font, app.ccc, formCoordinates.page2.ccc);
-  text(page2, font, app.ccmc, formCoordinates.page2.ccmc);
-  text(page2, font, app.rnc, formCoordinates.page2.rnc);
-  text(page2, font, app.grassroots, formCoordinates.page2.grassroots);
+  drawField(page2, app.trade_unions, formCoordinates.page2.tradeUnions);
+  drawField(page2, app.associations, formCoordinates.page2.associations);
+  drawField(page2, app.clubs, formCoordinates.page2.clubs);
+  drawField(page2, app.ccc, formCoordinates.page2.ccc);
+  drawField(page2, app.ccmc, formCoordinates.page2.ccmc);
+  drawField(page2, app.rnc, formCoordinates.page2.rnc);
+  drawField(page2, app.grassroots, formCoordinates.page2.grassroots);
 
   // Applicant signature + date.
-  text(
+  drawField(
     page2,
-    font,
     formatDateDDMMYYYY(app.applicant_signed_at),
     formCoordinates.page2.applicantDate,
   );
@@ -216,24 +250,21 @@ export async function generateFilledMembershipPDF(input: PdfGenerateInput): Prom
   }
 
   // Referral block.
-  text(page2, font, app.assigned_referral_name, formCoordinates.page2.referralName);
-  text(
+  drawField(page2, app.assigned_referral_name, formCoordinates.page2.referralName);
+  drawField(
     page2,
-    font,
     app.assigned_referral_membership_no,
     formCoordinates.page2.referralMembershipNo,
   );
   if (app.assigned_referral_known_years != null) {
-    text(
+    drawField(
       page2,
-      font,
       String(app.assigned_referral_known_years),
       formCoordinates.page2.referralYearsKnown,
     );
   }
-  text(
+  drawField(
     page2,
-    font,
     formatDateDDMMYYYY(app.referral_signed_at),
     formCoordinates.page2.referralDate,
   );
@@ -247,18 +278,16 @@ export async function generateFilledMembershipPDF(input: PdfGenerateInput): Prom
   }
 
   // Chairman block.
-  text(page2, font, app.chairman_name_on_form, formCoordinates.page2.chairmanName);
+  drawField(page2, app.chairman_name_on_form, formCoordinates.page2.chairmanName);
   if (app.chairman_known_years != null) {
-    text(
+    drawField(
       page2,
-      font,
       String(app.chairman_known_years),
       formCoordinates.page2.chairmanYearsKnown,
     );
   }
-  text(
+  drawField(
     page2,
-    font,
     formatDateDDMMYYYY(app.chairman_signed_at),
     formCoordinates.page2.chairmanDate,
   );
@@ -279,35 +308,40 @@ export async function generateFilledMembershipPDF(input: PdfGenerateInput): Prom
 
 // ───────── helpers ─────────
 
-function text(page: PDFPage, font: PDFFont, value: string | null | undefined, coord: Coord) {
+function text(
+  page: PDFPage,
+  defaultFont: PDFFont,
+  value: string | null | undefined,
+  coord: Coord,
+  cjkFont?: PDFFont,
+) {
   if (!value) return;
-  // pdf-lib's StandardFonts (Helvetica) use WinAnsi encoding, which can't
-  // represent CJK / many non-Latin code points. Strip unencodable chars
-  // rather than crashing the whole render. Embedding a CJK-capable TTF
-  // (e.g. Noto Sans CJK) is a follow-up — currently affects `chinese_name`
-  // only. See Step 8 report.
-  const safe = String(value).replace(/[^\x00-\xff]/g, "");
-  if (!safe) return;
+  const str = String(value);
+  // Per-field font pick: if the value contains any non-WinAnsi character,
+  // Helvetica would silently drop it (the old behaviour — see the user
+  // report where 郑家翔 vanished). Swap to the CJK font for the whole
+  // string; the subset also covers basic Latin so mixed strings work.
+  const font = cjkFont && hasNonWinAnsi(str) ? cjkFont : defaultFont;
 
   // No width constraint configured for this field — render as-is (back-compat
   // for short fixed-format fields like postal code, NRIC, dates).
   if (!coord.maxWidth) {
-    page.drawText(safe, { x: coord.x, y: coord.y, size: FIELD_SIZE, font });
+    page.drawText(str, { x: coord.x, y: coord.y, size: FIELD_SIZE, font });
     return;
   }
 
   const minSize = coord.minSize ?? MIN_FIELD_SIZE;
-  const fittedSize = fitFontSize(font, safe, coord.maxWidth, FIELD_SIZE, minSize);
+  const fittedSize = fitFontSize(font, str, coord.maxWidth, FIELD_SIZE, minSize);
 
-  if (font.widthOfTextAtSize(safe, fittedSize) <= coord.maxWidth) {
-    page.drawText(safe, { x: coord.x, y: coord.y, size: fittedSize, font });
+  if (font.widthOfTextAtSize(str, fittedSize) <= coord.maxWidth) {
+    page.drawText(str, { x: coord.x, y: coord.y, size: fittedSize, font });
     return;
   }
 
   // Doesn't fit even at minSize. Wrap if vertical room is allowed, otherwise
   // truncate with an ellipsis.
   if ((coord.maxLines ?? 1) > 1) {
-    drawWrappedText(page, safe, {
+    drawWrappedText(page, str, {
       x: coord.x,
       y: coord.y,
       maxWidth: coord.maxWidth,
@@ -319,14 +353,14 @@ function text(page: PDFPage, font: PDFFont, value: string | null | undefined, co
     return;
   }
 
-  let truncated = safe;
+  let truncated = str;
   while (
     truncated.length > 0 &&
     font.widthOfTextAtSize(truncated + "…", minSize) > coord.maxWidth
   ) {
     truncated = truncated.slice(0, -1);
   }
-  page.drawText(truncated + (truncated.length < safe.length ? "…" : ""), {
+  page.drawText(truncated + (truncated.length < str.length ? "…" : ""), {
     x: coord.x,
     y: coord.y,
     size: minSize,
@@ -384,15 +418,19 @@ function drawTickFromMap(page: PDFPage, map: Record<string, Coord>, value: strin
 
 function drawNameWithUnderlinedSurname(
   page: PDFPage,
-  font: PDFFont,
+  defaultFont: PDFFont,
+  cjkFont: PDFFont,
   app: ApplicationData,
   coord: Coord,
 ) {
-  const stripUnicode = (s: string) => s.replace(/[^\x00-\xff]/g, "");
-  const surname = stripUnicode((app.surname ?? "").toUpperCase().trim());
-  const given = stripUnicode((app.given_names ?? "").trim());
+  const surname = (app.surname ?? "").toUpperCase().trim();
+  const given = (app.given_names ?? "").trim();
   if (!surname && !given) return;
   let full = [surname, given].filter(Boolean).join(" ");
+  // Swap to CJK subset for any non-WinAnsi character anywhere in the name.
+  // The CJK subset covers basic Latin too, so a mixed "TAY 郑家翔" renders
+  // through a single font and the surname underline still tracks correctly.
+  const font: PDFFont = hasNonWinAnsi(full) ? cjkFont : defaultFont;
   // Shrink to fit if a maxWidth is configured. The underline tracks the
   // surname at the same fitted size so the line stays under the right text.
   const minSize = coord.minSize ?? MIN_FIELD_SIZE;

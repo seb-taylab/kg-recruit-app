@@ -44,5 +44,7 @@ next-env.d.ts
 /test-results/
 /playwright-report/
 /preview-*.pdf
+# Local smoke-test PDF artifacts (scripts/smoke-*.mjs)
+/scripts/_*.pdf
 
 .vercel
