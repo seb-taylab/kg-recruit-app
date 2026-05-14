@@ -1,0 +1,11 @@
+User-agent: *
+Disallow: /apply/
+Disallow: /referral/
+Disallow: /branch/
+Disallow: /taylab/
+Disallow: /auth/
+
+Allow: /
+Allow: /login
+Allow: /terms
+Allow: /privacy

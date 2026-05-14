@@ -1,0 +1,32 @@
+/* tokens-ok — tokens.css is the source of truth for all CSS custom properties */
+@import "../lib/design/tokens.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    /* iOS Safari: prevents zoom-on-focus by ensuring inputs >= 16px */
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background-color: var(--color-surface-page); /* tokens-ok */
+    color: var(--color-text-primary); /* tokens-ok */
+    font-family: var(--typography-family-sans); /* tokens-ok */
+    font-size: var(--typography-size-base); /* tokens-ok */
+    line-height: var(--typography-line-height-normal); /* tokens-ok */
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-border-focus); /* tokens-ok */
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+}

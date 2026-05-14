@@ -1,0 +1,97 @@
+import { redirect } from "next/navigation";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { requireAuth } from "@/lib/auth/get-user";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { formatDateDDMMMYYYY } from "@/lib/format/date";
+import { CreateBranchDialog } from "@/components/taylab/CreateBranchDialog";
+import { BranchActiveToggle } from "@/components/taylab/BranchActiveToggle";
+
+interface BranchRow {
+  id: string;
+  name: string;
+  constituency: string | null;
+  hq_email: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export default async function TaylabBranchesPage() {
+  const auth = await requireAuth();
+  if (auth.profile.role !== "taylab_staff") {
+    redirect("/branch");
+  }
+
+  const admin = createAdminClient();
+  const { data: rows } = await admin
+    .from("branches" as never)
+    .select("id, name, constituency, hq_email, is_active, created_at")
+    .order("created_at", { ascending: true });
+  const branches = (rows as BranchRow[] | null) ?? [];
+
+  // Application counts per branch (lifetime, all statuses). Tally in
+  // memory — PostgREST doesn't expose group-by directly, and the tenant
+  // count is small enough that one full scan is fine.
+  const counts = new Map<string, number>();
+  if (branches.length > 0) {
+    const { data: raw } = await admin
+      .from("applications" as never)
+      .select("branch_id");
+    for (const r of ((raw as Array<{ branch_id: string }> | null) ?? [])) {
+      counts.set(r.branch_id, (counts.get(r.branch_id) ?? 0) + 1);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <header className="flex items-end justify-between gap-4">
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-medium uppercase tracking-wide text-brand-blue">Taylab</p>
+          <h1 className="text-3xl font-bold leading-tight text-text-primary">Branches</h1>
+          <p className="text-text-secondary">
+            {branches.length} tenant{branches.length === 1 ? "" : "s"}. Create new branches and
+            invite the first Master Admin in one go.
+          </p>
+        </div>
+        <CreateBranchDialog />
+      </header>
+
+      {branches.length === 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>No branches yet</CardTitle>
+            <CardDescription>Create the first branch to get started.</CardDescription>
+          </CardHeader>
+        </Card>
+      ) : (
+        <ul className="flex flex-col gap-3">
+          {branches.map((b) => (
+            <li key={b.id}>
+              <Card>
+                <CardContent className="flex flex-col gap-3 p-6 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-col">
+                    <p className="text-base font-semibold text-text-primary">
+                      {b.name}
+                      {!b.is_active && (
+                        <span className="ml-2 text-xs font-normal uppercase tracking-wide text-text-muted">
+                          Inactive
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-sm text-text-secondary">
+                      {b.constituency ?? "—"} · {b.hq_email ?? "no HQ email"} · {counts.get(b.id) ?? 0}{" "}
+                      application{(counts.get(b.id) ?? 0) === 1 ? "" : "s"}
+                    </p>
+                    <p className="text-xs text-text-muted">
+                      Created {formatDateDDMMMYYYY(b.created_at)}
+                    </p>
+                  </div>
+                  <BranchActiveToggle branchId={b.id} active={b.is_active} />
+                </CardContent>
+              </Card>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
