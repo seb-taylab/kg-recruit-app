@@ -216,7 +216,7 @@ export const formCoordinates: FormCoordinates = {
     },
 
     // Photo box top-right corner above HQ block. 7:9 ratio per Addendum Gap 4.
-    photo: { x: 460, y: 700, width: 75, height: 96 },
+    photo: { x: 462, y: 705, width: 75, height: 96 },
   },
 
   page2: {
