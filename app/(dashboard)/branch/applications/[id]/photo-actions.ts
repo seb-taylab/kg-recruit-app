@@ -14,10 +14,13 @@ import { requireAuth, PermissionError } from "@/lib/auth/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isBranchAdminTeam } from "@/types/database";
 import { writeAuditLog, writeApplicationEvent } from "@/lib/audit/log";
+import { uploadApplicantPhoto } from "@/lib/cloudinary/client";
 
 export interface ActionResult {
   ok: boolean;
   error?: string;
+  previewUrl?: string;
+  faceDetected?: boolean;
 }
 
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -75,21 +78,24 @@ export async function replacePhotoAction(
     return { ok: false, error: "Unarchive the application first." };
   }
 
-  const path = app.applicant_photo_url ?? `${app.id}/photo.jpg`;
-  const { error: uploadErr } = await admin.storage
-    .from("applicant-photos")
-    .upload(path, bytes, { contentType: "image/jpeg", upsert: true });
-  if (uploadErr) {
-    return { ok: false, error: "Couldn't save the photo — try again in a minute." };
+  // Admin override goes through the same Cloudinary auto-crop pipeline
+  // as the applicant's own upload — same face detection, same 7:9 box,
+  // same PDF embed path.
+  let uploaded;
+  try {
+    uploaded = await uploadApplicantPhoto(bytes, app.id);
+  } catch (err) {
+    return {
+      ok: false,
+      error: `Couldn't save the photo — ${err instanceof Error ? err.message : "try again in a minute"}.`,
+    };
   }
 
-  // Persist the path if it wasn't set yet (legacy rows).
-  if (!app.applicant_photo_url) {
-    await admin
-      .from("applications" as never)
-      .update({ applicant_photo_url: path } as never)
-      .eq("id", app.id);
-  }
+  // Always overwrite the stored public_id — admin acted intentionally.
+  await admin
+    .from("applications" as never)
+    .update({ applicant_photo_url: uploaded.publicId } as never)
+    .eq("id", app.id);
 
   await writeAuditLog({
     action: "PHOTO_REPLACED",
@@ -98,7 +104,12 @@ export async function replacePhotoAction(
     actorId: auth.userId,
     actorEmail: auth.email,
     actorRole: auth.profile.role,
-    metadata: { path, bytes: bytes.byteLength, prior_status: app.status },
+    metadata: {
+      public_id: uploaded.publicId,
+      bytes: bytes.byteLength,
+      face_detected: uploaded.faceDetected,
+      prior_status: app.status,
+    },
   });
   await writeApplicationEvent({
     applicationId: app.id,
@@ -110,5 +121,9 @@ export async function replacePhotoAction(
   });
 
   revalidatePath(`/branch/applications/${app.id}`);
-  return { ok: true };
+  return {
+    ok: true,
+    previewUrl: uploaded.deliveryUrl,
+    faceDetected: uploaded.faceDetected,
+  };
 }

@@ -23,6 +23,7 @@ import { ExtendTtlButton } from "@/components/branch/ExtendTtlButton";
 import { ReplacePhotoCard } from "@/components/branch/ReplacePhotoCard";
 import { ChairmanReminderCard } from "@/components/branch/ChairmanReminderCard";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { applicantPhotoUrl, isCloudinaryPublicId } from "@/lib/cloudinary/client";
 import {
   LinkHistory,
   type LinkDeliveryRow,
@@ -143,14 +144,22 @@ export default async function ApplicationDetailPage({
       : buildApplicantUrl(rawToken)
     : null;
 
-  // Short-lived signed URL for the current photo (Replace card thumbnail).
+  // Thumbnail for the Replace-photo card.
+  //   - Cloudinary public_id → build the auto-cropped delivery URL (public,
+  //     no signing needed; folder access control sits at the public_id
+  //     namespace level).
+  //   - Legacy Supabase Storage path → mint a 10-minute signed URL.
   let currentPhotoUrl: string | null = null;
   if (app.applicant_photo_url) {
-    const adminSb = createAdminClient();
-    const { data: signed } = await adminSb.storage
-      .from("applicant-photos")
-      .createSignedUrl(app.applicant_photo_url, 60 * 10);
-    currentPhotoUrl = signed?.signedUrl ?? null;
+    if (isCloudinaryPublicId(app.applicant_photo_url)) {
+      currentPhotoUrl = applicantPhotoUrl(app.applicant_photo_url);
+    } else {
+      const adminSb = createAdminClient();
+      const { data: signed } = await adminSb.storage
+        .from("applicant-photos")
+        .createSignedUrl(app.applicant_photo_url, 60 * 10);
+      currentPhotoUrl = signed?.signedUrl ?? null;
+    }
   }
 
   const recipientPhone =

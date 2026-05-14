@@ -2,8 +2,16 @@
  * @tier organism
  * @design-spec KG_DesignSystem_v1.md §3 (PhotoCapture pattern)
  * @brand-spec KG_BrandExecution_PAP.md §3.1 (Take photo / Upload photo / Use this photo)
- * @consumes ui/Button, ui/Card, applicant/PhotoCropper
+ * @consumes ui/Button, ui/Card
  * @used-by components/applicant/ApplicantWizard.tsx
+ *
+ * Photo flow: capture or upload → server uploads to Cloudinary which
+ * auto-crops to the passport-style 7:9 box using face detection. The
+ * returned preview URL is the exact image embedded in the PDF.
+ *
+ * Manual cropping was removed when we adopted Cloudinary's face-aware
+ * auto-crop (decision framework Option A). If the auto-crop fails
+ * (no face detected) we surface a warning + a Retake button.
  */
 "use client";
 
@@ -12,21 +20,27 @@ import { Camera, Upload, RefreshCw, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { PhotoCropper } from "./PhotoCropper";
 
 interface PhotoStepProps {
   initialUrl: string | null;
-  onCroppedBlob: (blob: Blob) => Promise<void>;
+  /**
+   * Upload + auto-crop handler. Returns the auto-cropped preview URL plus
+   * whether Cloudinary's face detector found a face in the photo.
+   */
+  onCroppedBlob: (
+    blob: Blob,
+  ) => Promise<{ ok: boolean; previewUrl?: string; faceDetected?: boolean; error?: string }>;
 }
 
-type Mode = "idle" | "upload" | "camera" | "cropping" | "done";
+type Mode = "idle" | "upload" | "camera" | "done";
 
 export function PhotoStep({ initialUrl, onCroppedBlob }: PhotoStepProps) {
   const [mode, setMode] = React.useState<Mode>(initialUrl ? "done" : "idle");
-  const [sourceUrl, setSourceUrl] = React.useState<string | null>(initialUrl);
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(initialUrl);
   const [cameraError, setCameraError] = React.useState<string | null>(null);
   const [uploading, setUploading] = React.useState(false);
+  // True when Cloudinary couldn't find a face — surfaces a retake hint.
+  const [noFaceWarning, setNoFaceWarning] = React.useState(false);
   // True once the live preview has decoded its first frame — gates Snap so
   // it never captures a 0×0 or pre-render-empty frame.
   const [cameraReady, setCameraReady] = React.useState(false);
@@ -90,7 +104,25 @@ export function PhotoStep({ initialUrl, onCroppedBlob }: PhotoStepProps) {
     }
   }
 
-  function snapPhoto() {
+  async function uploadBlob(blob: Blob) {
+    setUploading(true);
+    setCameraError(null);
+    setNoFaceWarning(false);
+    try {
+      const result = await onCroppedBlob(blob);
+      if (!result.ok) {
+        setCameraError(result.error ?? "Couldn't save the photo — try again in a minute.");
+        return;
+      }
+      setPreviewUrl(result.previewUrl ?? null);
+      setNoFaceWarning(result.faceDetected === false);
+      setMode("done");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function snapPhoto() {
     if (!videoRef.current) return;
     const v = videoRef.current;
     // Belt-and-braces: button is already disabled when !cameraReady, but
@@ -105,45 +137,34 @@ export function PhotoStep({ initialUrl, onCroppedBlob }: PhotoStepProps) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(v, 0, 0);
-    const data = canvas.toDataURL("image/jpeg", 0.95);
-    setSourceUrl(data);
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     setCameraReady(false);
-    setMode("cropping");
+    const blob: Blob | null = await new Promise((resolve) =>
+      canvas.toBlob((b) => resolve(b), "image/jpeg", 0.95),
+    );
+    if (!blob) {
+      setCameraError("Couldn't capture the frame — try again.");
+      setMode("idle");
+      return;
+    }
+    await uploadBlob(blob);
   }
 
-  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) {
       setCameraError("Photo is too large (max 5 MB). Try a smaller photo or retake.");
       return;
     }
-    const url = URL.createObjectURL(file);
-    setSourceUrl(url);
-    setMode("cropping");
-  }
-
-  async function handleConfirm(blob: Blob) {
-    setUploading(true);
-    try {
-      const url = URL.createObjectURL(blob);
-      setPreviewUrl(url);
-      await onCroppedBlob(blob);
-      setMode("done");
-    } catch {
-      setCameraError("Couldn't save the photo — try again in a minute.");
-      setMode("idle");
-    } finally {
-      setUploading(false);
-    }
+    await uploadBlob(file);
   }
 
   function reset() {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
-    setSourceUrl(null);
+    setNoFaceWarning(false);
     setMode("idle");
   }
 
@@ -206,32 +227,42 @@ export function PhotoStep({ initialUrl, onCroppedBlob }: PhotoStepProps) {
           </div>
         )}
 
-        {mode === "cropping" && sourceUrl && (
-          <PhotoCropper src={sourceUrl} onCancel={reset} onConfirm={handleConfirm} />
+        {uploading && mode !== "done" && (
+          <p className="text-sm text-text-muted">Uploading + auto-cropping…</p>
         )}
 
         {mode === "done" && previewUrl && (
           <div className="flex flex-col gap-3">
             <div className="flex justify-center">
-              {/* eslint-disable-next-line @next/next/no-img-element -- preview is a blob URL, not optimisable by next/image */}
+              {/* eslint-disable-next-line @next/next/no-img-element -- preview comes from Cloudinary, not the public/ folder */}
               <img
                 src={previewUrl}
                 alt="Your photo"
                 width={168}
                 height={216}
-                className="h-auto w-24 rounded-md border border-border"
+                className="h-auto w-32 rounded-md border border-border"
               />
             </div>
-            <Alert variant="info">
-              <AlertDescription className="flex items-center gap-2">
-                <CheckCircle2
-                  className="h-5 w-5 text-state-success"
-                  strokeWidth={1.5}
-                  aria-hidden="true"
-                />
-                Photo saved.
-              </AlertDescription>
-            </Alert>
+            {noFaceWarning ? (
+              <Alert variant="warning">
+                <AlertDescription>
+                  We couldn&rsquo;t find a face in this photo. If the cropped result
+                  above doesn&rsquo;t show your face clearly, retake with better lighting
+                  and your face centred.
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <Alert variant="info">
+                <AlertDescription className="flex items-center gap-2">
+                  <CheckCircle2
+                    className="h-5 w-5 text-state-success"
+                    strokeWidth={1.5}
+                    aria-hidden="true"
+                  />
+                  Photo saved + auto-cropped.
+                </AlertDescription>
+              </Alert>
+            )}
             <Button
               type="button"
               variant="outline"

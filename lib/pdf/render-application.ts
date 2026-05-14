@@ -13,6 +13,10 @@ import {
   type ApplicationData,
   type SignatureAsset,
 } from "@/lib/pdf/generate";
+import {
+  applicantPhotoUrl,
+  isCloudinaryPublicId,
+} from "@/lib/cloudinary/client";
 
 export interface RenderResult {
   ok: true;
@@ -59,13 +63,26 @@ export async function renderApplicationPdf(
     return { ok: false, error: "Applicant photo missing — cannot render PDF." };
   }
 
-  const { data: photoBlob, error: photoErr } = await admin.storage
-    .from("applicant-photos")
-    .download(app.applicant_photo_url);
-  if (photoErr || !photoBlob) {
-    return { ok: false, error: "Couldn't load the applicant photo." };
+  // applicant_photo_url either:
+  //  - starts with `kg-recruit/applications/…` → Cloudinary public_id (new path)
+  //  - else a Supabase Storage path (legacy / test fixtures)
+  let photoBytes: Uint8Array;
+  if (isCloudinaryPublicId(app.applicant_photo_url)) {
+    const url = applicantPhotoUrl(app.applicant_photo_url);
+    const res = await fetch(url);
+    if (!res.ok) {
+      return { ok: false, error: "Couldn't load the applicant photo from Cloudinary." };
+    }
+    photoBytes = new Uint8Array(await res.arrayBuffer());
+  } else {
+    const { data: photoBlob, error: photoErr } = await admin.storage
+      .from("applicant-photos")
+      .download(app.applicant_photo_url);
+    if (photoErr || !photoBlob) {
+      return { ok: false, error: "Couldn't load the applicant photo." };
+    }
+    photoBytes = new Uint8Array(await photoBlob.arrayBuffer());
   }
-  const photoBytes = new Uint8Array(await photoBlob.arrayBuffer());
 
   const sigAssets: { applicant?: SignatureAsset; referral?: SignatureAsset; chairman?: SignatureAsset } = {};
   for (const role of ["applicant", "referral", "chairman"] as const) {

@@ -12,6 +12,7 @@ import {
   nricRequired,
 } from "@/lib/validation/applicant-form";
 import { writeApplicationEvent, writeAuditLog } from "@/lib/audit/log";
+import { uploadApplicantPhoto } from "@/lib/cloudinary/client";
 
 interface ActionResult {
   ok: boolean;
@@ -85,31 +86,42 @@ export async function saveDraftPage2Action(
   return { ok: true };
 }
 
-/** Uploads a photo blob to the applicant-photos bucket and stamps the URL. */
+/**
+ * Uploads a raw applicant photo to Cloudinary, which auto-crops it to the
+ * passport-style 7:9 box using face detection (c_thumb + g_face). Stores
+ * the resulting Cloudinary public_id in `applicant_photo_url`.
+ *
+ * Returns `faceDetected: false` when Cloudinary couldn't find a face so
+ * the wizard can warn the applicant (auto-crop falls back to centre, which
+ * is rarely usable for a passport-style photo).
+ */
 export async function uploadPhotoAction(
   rawToken: string,
   fileBuffer: ArrayBuffer,
   contentType: string,
-): Promise<ActionResult> {
+): Promise<ActionResult & { faceDetected?: boolean; previewUrl?: string }> {
   if (!tokenInput.safeParse({ rawToken }).success) return { ok: false, error: "Bad token." };
   const auth = await authorise(rawToken);
   if (!auth.ok) return { ok: false, error: auth.error };
+  void contentType;
 
   const admin = createAdminClient();
   const appId = auth.verify.application.id;
-  const path = `${appId}/photo.jpg`;
-  const { error: uploadErr } = await admin.storage
-    .from("applicant-photos")
-    .upload(path, new Uint8Array(fileBuffer), {
-      contentType,
-      upsert: true,
-    });
-  if (uploadErr) return { ok: false, error: "Couldn't save the photo — try again in a minute." };
+
+  let uploaded;
+  try {
+    uploaded = await uploadApplicantPhoto(Buffer.from(fileBuffer), appId);
+  } catch (err) {
+    return {
+      ok: false,
+      error: `Couldn't save the photo — ${err instanceof Error ? err.message : "try again in a minute"}.`,
+    };
+  }
 
   const { error: updateErr } = await admin
     .from("applications" as never)
     .update({
-      applicant_photo_url: path,
+      applicant_photo_url: uploaded.publicId,
       applicant_photo_captured_method: "upload",
     } as never)
     .eq("id", appId);
@@ -119,9 +131,14 @@ export async function uploadPhotoAction(
     applicationId: appId,
     branchId: auth.verify.magicLink.branch_id,
     eventType: "PHOTO_UPLOADED",
+    metadata: { face_detected: uploaded.faceDetected },
   });
   revalidatePath(`/apply/${rawToken}`);
-  return { ok: true };
+  return {
+    ok: true,
+    faceDetected: uploaded.faceDetected,
+    previewUrl: uploaded.deliveryUrl,
+  };
 }
 
 export async function uploadNricAction(
