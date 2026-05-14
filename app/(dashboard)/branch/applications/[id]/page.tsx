@@ -23,6 +23,7 @@ import { UnarchiveButton } from "@/components/branch/UnarchiveButton";
 import { ExtendTtlButton } from "@/components/branch/ExtendTtlButton";
 import { ReplacePhotoCard } from "@/components/branch/ReplacePhotoCard";
 import { ChairmanReminderCard } from "@/components/branch/ChairmanReminderCard";
+import { MarkSentWithoutEmailButton } from "@/components/branch/MarkSentWithoutEmailButton";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { applicantPhotoUrl, isCloudinaryPublicId } from "@/lib/cloudinary/client";
 import {
@@ -244,6 +245,32 @@ export default async function ApplicationDetailPage({
           <CardContent className="flex flex-col gap-2 sm:flex-row">
             {app.hq_pdf_url && <DownloadStoredPdfButton applicationId={app.id} />}
             <PreviewPdfButton applicationId={app.id} />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Primary CTA when ready to send. Default path opens the full
+          recipient picker (HQ / Self / Custom emails). The "Mark as sent"
+          escape hatch is for cases where the PDF was delivered out-of-band
+          and we only need to flip the state. */}
+      {isAdminTeam && app.status === "READY_TO_SEND" && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Send to HQ</CardTitle>
+            <CardDescription>
+              The Chairman has signed. Review the PDF above, then send it to HQ —
+              or, if you&rsquo;ve already forwarded it another way, just mark it
+              sent.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2 sm:flex-row">
+            <Link
+              href={`/branch/ready-to-send/${app.id}`}
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-brand-red px-4 py-2 text-base font-semibold text-text-inverse transition-colors duration-fast hover:opacity-90"
+            >
+              Review &amp; send to HQ
+            </Link>
+            <MarkSentWithoutEmailButton applicationId={app.id} />
           </CardContent>
         </Card>
       )}
