@@ -5,9 +5,6 @@ export default function ContactPage() {
   return (
     <article className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-8 px-4 py-12">
       <header className="flex flex-col gap-2">
-        <p className="text-sm font-medium uppercase tracking-wide text-brand-blue">
-          PAP Kampong Glam Branch
-        </p>
         <h1 className="text-3xl font-bold leading-tight text-text-primary">
           Request an invite
         </h1>

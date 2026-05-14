@@ -6,7 +6,6 @@ export default function PublicLanding() {
   return (
     <div className="flex flex-1 flex-col">
       <section className="mx-auto flex w-full max-w-3xl flex-col items-center gap-6 px-4 py-16 text-center">
-        <p className="text-sm font-medium uppercase tracking-wide text-brand-blue">PAP</p>
         <h1 className="text-3xl font-bold leading-tight text-text-primary md:text-4xl">
           Kampong Glam Branch — Membership Application Portal
         </h1>

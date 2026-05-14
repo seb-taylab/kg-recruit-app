@@ -75,7 +75,6 @@ export default async function TaylabOverviewPage() {
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
-        <p className="text-sm font-medium uppercase tracking-wide text-brand-blue">Taylab</p>
         <h1 className="text-3xl font-bold leading-tight text-text-primary">Platform overview</h1>
         <p className="text-text-secondary">Signed in as {auth.profile.full_name ?? auth.email}.</p>
       </header>

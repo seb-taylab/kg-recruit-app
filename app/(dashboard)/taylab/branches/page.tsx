@@ -45,7 +45,6 @@ export default async function TaylabBranchesPage() {
     <div className="flex flex-col gap-6">
       <header className="flex items-end justify-between gap-4">
         <div className="flex flex-col gap-2">
-          <p className="text-sm font-medium uppercase tracking-wide text-brand-blue">Taylab</p>
           <h1 className="text-3xl font-bold leading-tight text-text-primary">Branches</h1>
           <p className="text-text-secondary">
             {branches.length} tenant{branches.length === 1 ? "" : "s"}. Create new branches and

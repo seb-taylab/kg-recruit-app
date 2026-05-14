@@ -41,9 +41,6 @@ export default async function JourneyPage({
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
-        <p className="text-sm font-medium uppercase tracking-wide text-brand-blue">
-          {auth.branch.name}
-        </p>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-3xl font-bold leading-tight text-text-primary">Journey</h1>
           <JourneyViewSwitcher current={view} />

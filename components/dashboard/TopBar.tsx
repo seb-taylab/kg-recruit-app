@@ -28,10 +28,11 @@ export function TopBar({ fullName, email, role, branchName }: TopBarProps) {
   return (
     <header className="flex h-16 items-center justify-between border-b border-border bg-surface-card px-4">
       <div className="min-w-0">
+        {/* Branch name lives in the sidebar. TopBar shows just the role so
+            the same identifier doesn't appear three times on one screen. */}
         <p className="truncate text-sm font-semibold text-text-primary">
-          {role === "taylab_staff" ? "Taylab Staff" : branchName ?? "Branch"}
+          {ROLE_LABEL[role]}
         </p>
-        <p className="truncate text-xs text-text-muted">{ROLE_LABEL[role]}</p>
       </div>
       <div className="flex items-center gap-3">
         <div className="hidden text-right sm:block">

@@ -15,9 +15,6 @@ export default async function InitiatePage() {
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
       <header className="flex flex-col gap-2">
-        <p className="text-sm font-medium uppercase tracking-wide text-brand-blue">
-          {auth.branch.name}
-        </p>
         <h1 className="text-3xl font-bold leading-tight text-text-primary">
           Invite a new applicant
         </h1>

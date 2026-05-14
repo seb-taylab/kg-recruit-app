@@ -89,7 +89,6 @@ export default async function TaylabAuditPage({
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
-        <p className="text-sm font-medium uppercase tracking-wide text-brand-blue">Taylab</p>
         <h1 className="text-3xl font-bold leading-tight text-text-primary">Audit log</h1>
         <p className="text-text-secondary">
           Most recent {PAGE_SIZE} events. Filter by branch and action.
