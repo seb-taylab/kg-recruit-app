@@ -42,10 +42,58 @@ export default async function ChairmanSignDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const auth = await requireAuth();
-  if (!auth.branch || auth.profile.role !== "branch_chairman") {
+  const { id } = await params;
+  if (!auth.branch) {
     redirect("/branch");
   }
-  const { id } = await params;
+  // Chairman-only signing surface. Admin team members who hit this link
+  // (e.g. they were testing the "Copy link" share button) see a clear
+  // explanation instead of a silent redirect to the dashboard.
+  if (auth.profile.role !== "branch_chairman") {
+    return (
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+        <header className="flex flex-col gap-2">
+          <h1 className="text-3xl font-bold leading-tight text-text-primary">
+            This link is for the Branch Chairman
+          </h1>
+          <p className="text-text-secondary">
+            You&rsquo;re signed in as{" "}
+            <span className="font-medium text-text-primary">
+              {auth.profile.full_name ?? auth.email}
+            </span>
+            . Only the Branch Chairman can open the signing page.
+          </p>
+        </header>
+        <Alert variant="info">
+          <AlertDescription>
+            Forward this link to the Chairman (WhatsApp / SMS / email). They&rsquo;ll be
+            asked to sign in, then dropped straight on the signing page.
+          </AlertDescription>
+        </Alert>
+        <Card>
+          <CardHeader>
+            <CardTitle>Application link</CardTitle>
+            <CardDescription>Copy this and send it to the Chairman.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <p className="break-all rounded-md bg-surface-page p-3 text-xs text-text-secondary">
+              {process.env.NEXT_PUBLIC_APP_URL ?? "https://kg.taylab.com"}/branch/sign/{id}
+            </p>
+            <p className="text-sm text-text-muted">
+              To view this application yourself, open it from the{" "}
+              <a
+                href={`/branch/applications/${id}`}
+                className="font-medium text-brand-blue hover:underline"
+              >
+                application detail page
+              </a>
+              .
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   const admin = createAdminClient();
   const { data: appRow } = await admin
