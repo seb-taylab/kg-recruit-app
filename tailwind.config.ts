@@ -69,8 +69,10 @@ const config: Config = {
       2:  "var(--spacing-2)",
       3:  "var(--spacing-3)",
       4:  "var(--spacing-4)",
+      5:  "var(--spacing-5)",  // 20px — checkbox/radio/icon (touch-comfortable)
       6:  "var(--spacing-6)",
       8:  "var(--spacing-8)",
+      10: "var(--spacing-10)", // 40px — nudges towards 44px mobile tap target with padding
       12: "var(--spacing-12)",
       16: "var(--spacing-16)",
       24: "var(--spacing-24)",
