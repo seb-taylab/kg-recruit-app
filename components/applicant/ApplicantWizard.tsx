@@ -308,6 +308,15 @@ export function ApplicantWizard(props: ApplicantWizardProps) {
     },
   });
 
+  // Clear any stale serverError whenever the user navigates between
+  // wizard steps (forward via *Next handlers OR back via the Back
+  // buttons). Otherwise a "We couldn't submit yet — fix X" message from
+  // a previous signature attempt persists after the user has navigated
+  // back to fix it, even after they pick the right value visually.
+  React.useEffect(() => {
+    setServerError(null);
+  }, [step]);
+
   // react-hook-form's watch() uses a Proxy that React Compiler can't memoize
   // safely. We only read the watched value here for conditional rendering;
   // re-renders happen via react-hook-form's own subscriptions.
