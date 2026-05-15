@@ -8,6 +8,8 @@ import { formatDateDDMMMYYYY } from "@/lib/format/date";
 import { formatPhoneDisplay } from "@/lib/format/phone";
 import { ChairmanSignForm } from "@/components/branch/ChairmanSignForm";
 import { applicantPhotoUrl, isCloudinaryPublicId } from "@/lib/cloudinary/client";
+import { categoryDisplay } from "@/lib/applications/occupation";
+import type { OccupationCategory } from "@/lib/validation/occupation-organisation";
 
 export const dynamic = "force-dynamic";
 
@@ -49,9 +51,14 @@ interface ApplicationRow {
   tel_hp: string | null;
   email: string | null;
 
-  // Work
+  // Work — legacy free-text columns kept readable for pre-redesign rows;
+  // new structured columns drive the display when present.
   occupation: string | null;
   organisation: string | null;
+  occupation_category: string | null;
+  occupation_detail: string | null;
+  organisation_name: string | null;
+  school_level: string | null;
   monthly_income: string | null;
 
   // Online presence (almost always empty — expand-only)
@@ -93,7 +100,7 @@ const APP_COLUMNS = [
   "race, gender, marital_status, housing_type, hdb_rooms, highest_edu",
   "written_languages, spoken_languages",
   "home_address, postal_code, tel_home, tel_office, tel_hp, email",
-  "occupation, organisation, monthly_income",
+  "occupation, organisation, occupation_category, occupation_detail, organisation_name, school_level, monthly_income",
   "facebook, linkedin, twitter, blog",
   "hobbies, trade_unions, associations, clubs, ccc, ccmc, rnc, grassroots",
   "applicant_signed_at, assigned_referral_name, assigned_referral_membership_no, assigned_referral_known_years, referral_signed_at, chairman_name_on_form",
@@ -385,17 +392,38 @@ export default async function ChairmanSignDetailPage({
         </CardContent>
       </Card>
 
-      {/* WORK — always visible. */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Work</CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-          <SummaryRow label="Occupation" value={app.occupation} wholeRow />
-          <SummaryRow label="Organisation" value={app.organisation} wholeRow />
-          <SummaryRow label="Monthly income" value={incomeSummary} />
-        </CardContent>
-      </Card>
+      {/* WORK — always visible. categoryDisplay picks the right label
+          for the second row based on the applicant's category: "Company"
+          for employed, "School" for student, "Unit" for NS, etc. Legacy
+          rows (occupation_category NULL) fall back to the flat
+          occupation/organisation values so old applications stay
+          readable. */}
+      {(() => {
+        const display = categoryDisplay({
+          occupation_category: (app.occupation_category as OccupationCategory | null) ?? null,
+          occupation_detail: app.occupation_detail ?? app.occupation,
+          organisation_name: app.organisation_name ?? app.organisation,
+          school_level: app.school_level,
+        });
+        return (
+          <Card>
+            <CardHeader>
+              <CardTitle>Work</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+              <SummaryRow label="Occupation" value={display.occupationLine} wholeRow />
+              {display.secondaryLabel && (
+                <SummaryRow
+                  label={display.secondaryLabel}
+                  value={display.secondaryValue}
+                  wholeRow
+                />
+              )}
+              <SummaryRow label="Monthly income" value={incomeSummary} />
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* REFERRAL — always visible. The Chairman is signing on the
           referral's vouching, so this needs to be unmissable. */}

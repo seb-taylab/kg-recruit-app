@@ -22,6 +22,7 @@ import { formCoordinates, type Coord } from "@/lib/pdf/form-coordinates";
 import { FORM_TICK_VALUES, type TickGroupKeys } from "@/lib/pdf/form-coordinates-keys";
 import { formatDateDDMMYYYY } from "@/lib/format/date";
 import { drawWrappedText } from "@/lib/pdf/text-wrap";
+import { pdfOccupationLines } from "@/lib/applications/occupation";
 
 /**
  * Any non-WinAnsi character → use the CJK font. The chinese-simplified
@@ -58,8 +59,24 @@ export interface ApplicationData {
   twitter: string | null;
   blog: string | null;
   email: string | null;
+  // Legacy free-text columns — kept on the type so older fixtures + the
+  // category-less fallback in pdfOccupationLines stay readable. New
+  // structured columns below override these at render time when present.
   occupation: string | null;
   organisation: string | null;
+  /** Structured occupation category (post-redesign). NULL for legacy rows. */
+  occupation_category:
+    | "employed"
+    | "self_employed"
+    | "student"
+    | "national_service"
+    | "unemployed"
+    | "homemaker"
+    | "retired"
+    | "other"
+    | null;
+  occupation_detail: string | null;
+  organisation_name: string | null;
   monthly_income: string | null;
   hobbies: string[] | null;
   trade_unions: string | null;
@@ -218,8 +235,19 @@ export async function generateFilledMembershipPDF(input: PdfGenerateInput): Prom
   }
 
   // ─── Page 2 ────────────────────────────────────────────────────────
-  drawField(page2, app.occupation, formCoordinates.page2.occupation);
-  drawField(page2, app.organisation, formCoordinates.page2.organisation);
+  // Use the structured-fields → flat-string mapper so the PDF reads
+  // category-aware text ("Student" / "Homemaker" / "Retired — formerly
+  // Doctor") rather than whatever the applicant happened to type. For
+  // legacy rows where occupation_category is NULL, the helper falls
+  // back to the raw fields, which we top up with the legacy free-text
+  // columns to keep older PDFs unchanged.
+  const occLines = pdfOccupationLines({
+    occupation_category: app.occupation_category,
+    occupation_detail: app.occupation_detail ?? app.occupation,
+    organisation_name: app.organisation_name ?? app.organisation,
+  });
+  drawField(page2, occLines.occupation, formCoordinates.page2.occupation);
+  drawField(page2, occLines.organisation, formCoordinates.page2.organisation);
   drawTickFromMap(page2, formCoordinates.page2.monthlyIncome, app.monthly_income);
 
   for (let i = 0; i < Math.min((app.hobbies ?? []).length, 3); i++) {

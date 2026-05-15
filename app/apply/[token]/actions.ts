@@ -13,6 +13,8 @@ import {
 } from "@/lib/validation/applicant-form";
 import { writeApplicationEvent, writeAuditLog } from "@/lib/audit/log";
 import { uploadApplicantPhoto } from "@/lib/cloudinary/client";
+import { buildLegacyOccupationString } from "@/lib/applications/occupation";
+import type { OccupationCategory } from "@/lib/validation/occupation-organisation";
 
 interface ActionResult {
   ok: boolean;
@@ -138,14 +140,66 @@ export async function saveDraftPage2Action(
   const parsed = applicantPage2Schema.partial().safeParse(values);
   if (!parsed.success) return mapFieldErrors(parsed.error);
 
+  // Derive the legacy free-text occupation + organisation columns from
+  // the new structured fields whenever any of the source fields changed.
+  // Keeps the PDF renderer + Chairman sign page (both still read the
+  // legacy columns) working without each one needing to know the new
+  // shape. Skip when no source field is in this update — autosave of
+  // other Page 2 fields (e.g. just hobbies) shouldn't stomp values
+  // that already exist.
+  const occupationChanged =
+    parsed.data.occupation_category !== undefined ||
+    parsed.data.occupation_detail !== undefined ||
+    parsed.data.organisation_name !== undefined;
+  const legacyOccupation = occupationChanged
+    ? buildLegacyOccupationString({
+        occupation_category:
+          parsed.data.occupation_category ?? null,
+        occupation_detail: parsed.data.occupation_detail ?? null,
+        organisation_name: parsed.data.organisation_name ?? null,
+      })
+    : undefined;
+  const legacyOrganisation =
+    occupationChanged && parsed.data.occupation_category
+      ? // Homemaker / other have no organisation; everyone else uses
+        // the organisation_name input directly (which the helper already
+        // emits via pdfOccupationLines, but for the legacy column we
+        // just take the raw value — same semantics).
+        legacyOrgFor(
+          parsed.data.occupation_category,
+          parsed.data.organisation_name ?? null,
+        )
+      : undefined;
+
   const admin = createAdminClient();
+  const update = {
+    ...parsed.data,
+    ...(legacyOccupation !== undefined ? { occupation: legacyOccupation } : {}),
+    ...(legacyOrganisation !== undefined ? { organisation: legacyOrganisation } : {}),
+  };
   const { error } = await admin
     .from("applications" as never)
-    .update(parsed.data as never)
+    .update(update as never)
     .eq("id", auth.verify.application.id);
   if (error) return { ok: false, error: "Couldn't save — try again in a minute." };
   revalidatePath(`/apply/${rawToken}`);
   return { ok: true };
+}
+
+/**
+ * Pick the legacy organisation value to persist alongside the new
+ * structured columns. Mirrors pdfOccupationLines's logic but produces
+ * a single nullable string for the DB rather than a {occupation,
+ * organisation} pair: homemaker + other have no organisation.
+ */
+function legacyOrgFor(
+  category: OccupationCategory,
+  orgName: string | null,
+): string | null {
+  const org = orgName?.trim() ?? "";
+  if (!org) return null;
+  if (category === "homemaker" || category === "other") return null;
+  return org;
 }
 
 /**

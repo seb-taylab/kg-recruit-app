@@ -61,8 +61,15 @@ const app = {
   twitter: null,
   blog: null,
   email: "seb@taylab.com",
+  // Structured occupation + organisation (post-redesign). Category =
+  // employed so the PDF renders occupation_detail on the occupation
+  // line and organisation_name on the organisation line. Legacy fields
+  // kept too so the smoke also covers the back-compat fallback path.
   occupation: "Software Engineer",
-  organisation: "Acme 公司", // mixed Latin+CJK org name
+  organisation: "Acme 公司",
+  occupation_category: "employed",
+  occupation_detail: "Software Engineer",
+  organisation_name: "Acme 公司", // mixed Latin+CJK org name
   monthly_income: "$5,001 - $10,000",
   hobbies: ["Reading"],
   trade_unions: null,

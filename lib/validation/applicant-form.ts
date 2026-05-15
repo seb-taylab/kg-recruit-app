@@ -13,6 +13,10 @@
  */
 import { z } from "zod";
 import { FORM_TICK_VALUES } from "@/lib/pdf/form-coordinates-keys";
+import {
+  occupationOrganisationSchema,
+  checkOccupationRequired,
+} from "@/lib/validation/occupation-organisation";
 
 const NRIC_REGEX = /^[STFG]\d{7}[A-Z]$/;
 const SG_POSTAL = /^\d{6}$/;
@@ -179,11 +183,13 @@ export const applicantPage1Schema = z.object({
 });
 
 export const applicantPage2Schema = z.object({
-  occupation: z.string().min(1, "This field is required").max(80, "Occupation is too long"),
-  organisation: z
-    .string()
-    .min(1, "This field is required")
-    .max(100, "Employer / organisation is too long"),
+  // Structured occupation + organisation (replaces the old free-text
+  // pair). The legacy `occupation` + `organisation` columns are still
+  // populated server-side from these via lib/applications/occupation.ts
+  // so the PDF renderer + Chairman sign page keep working unchanged.
+  // Per-category required-ness lives in applicantFullSchema's
+  // superRefine — not here — so partial draft autosaves don't bounce.
+  ...occupationOrganisationSchema.shape,
   monthly_income: z.enum(FORM_TICK_VALUES.monthlyIncome, { message: "Pick a bracket" }),
   hobbies: z
     .array(z.string().max(40, "Hobby name is too long"))
@@ -229,6 +235,18 @@ export const applicantFullSchema = applicantPage1Schema
         path: ["unit_number"],
         message:
           "Unit number is required for apartments. Pick 'Landed' below if you don't have one.",
+      });
+    }
+    // Category-conditional required-ness for the new occupation +
+    // organisation fields. checkOccupationRequired() returns one
+    // issue per missing field; we surface each on its own path so
+    // the wizard can highlight both fields when the category
+    // requires both (e.g. employed → job title + company name).
+    for (const issue of checkOccupationRequired(data)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: issue.path,
+        message: issue.message,
       });
     }
   });

@@ -51,7 +51,10 @@ export async function renderApplicationPdf(
   const { data: row } = await admin
     .from("applications" as never)
     .select(
-      "id, branch_id, status, surname, given_names, name, applicant_name_at_invite, nric_no, chinese_name, home_address, postal_code, housing_type, hdb_rooms, date_of_birth, place_of_birth, race, gender, marital_status, tel_home, tel_office, tel_hp, highest_edu, written_languages, spoken_languages, facebook, linkedin, twitter, blog, email, occupation, organisation, monthly_income, hobbies, trade_unions, associations, clubs, ccc, ccmc, rnc, grassroots, applicant_signed_at, applicant_photo_url, assigned_referral_name, assigned_referral_membership_no, assigned_referral_known_years, referral_signed_at, chairman_name_on_form, chairman_known_years, chairman_signed_at",
+      // Structured occupation columns join legacy ones so pdfOccupationLines
+      // can pick the right source. For rows submitted pre-redesign the
+      // category is NULL and the helper falls back to the free-text values.
+      "id, branch_id, status, surname, given_names, name, applicant_name_at_invite, nric_no, chinese_name, home_address, postal_code, housing_type, hdb_rooms, date_of_birth, place_of_birth, race, gender, marital_status, tel_home, tel_office, tel_hp, highest_edu, written_languages, spoken_languages, facebook, linkedin, twitter, blog, email, occupation, organisation, occupation_category, occupation_detail, organisation_name, monthly_income, hobbies, trade_unions, associations, clubs, ccc, ccmc, rnc, grassroots, applicant_signed_at, applicant_photo_url, assigned_referral_name, assigned_referral_membership_no, assigned_referral_known_years, referral_signed_at, chairman_name_on_form, chairman_known_years, chairman_signed_at",
     )
     .eq("id", applicationId)
     .single();

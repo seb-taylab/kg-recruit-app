@@ -62,7 +62,11 @@ export default async function ApplicantTokenPage({
       // to be selected so the draft restores correctly when the applicant
       // returns to a half-filled form. home_address is kept too — it's
       // the server-derived flat string used by PDF render / detail pages.
-      "nric_no, surname, given_names, chinese_name, home_address, postal_code, block_number, street_name, building_name, unit_number, latitude, longitude, housing_type, hdb_rooms, date_of_birth, place_of_birth, race, gender, marital_status, tel_home, tel_office, tel_hp, highest_edu, written_languages, spoken_languages, facebook, linkedin, twitter, blog, email, occupation, organisation, monthly_income, hobbies, trade_unions, associations, clubs, ccc, ccmc, rnc, grassroots, applicant_photo_url, consent_pdpa",
+      // Structured occupation + organisation (PR for free-text cleanup)
+      // joins the address fields here. Legacy occupation/organisation
+      // columns kept in the SELECT for back-compat draft restore on
+      // any pre-redesign in-flight rows.
+      "nric_no, surname, given_names, chinese_name, home_address, postal_code, block_number, street_name, building_name, unit_number, latitude, longitude, housing_type, hdb_rooms, date_of_birth, place_of_birth, race, gender, marital_status, tel_home, tel_office, tel_hp, highest_edu, written_languages, spoken_languages, facebook, linkedin, twitter, blog, email, occupation, organisation, occupation_category, occupation_detail, organisation_name, school_level, monthly_income, hobbies, trade_unions, associations, clubs, ccc, ccmc, rnc, grassroots, applicant_photo_url, consent_pdpa",
     )
     .eq("id", verify.application.id)
     .single();

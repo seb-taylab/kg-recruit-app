@@ -52,6 +52,7 @@ import { PhotoStep } from "./PhotoStep";
 import { NricStep } from "./NricStep";
 import { SignaturePad } from "./SignaturePad";
 import { AddressFields } from "./AddressFields";
+import { OccupationOrganisationFields } from "./OccupationOrganisationFields";
 
 type WizardStep = "page1" | "page2" | "photo" | "nric" | "sign";
 
@@ -91,8 +92,16 @@ const FIELD_LABELS: Record<string, string> = {
   twitter: "Twitter",
   blog: "Blog",
   email: "Email",
-  occupation: "Occupation / designation",
-  organisation: "Organisation / company",
+  // Structured occupation + organisation (post-redesign). Legacy
+  // occupation/organisation columns are still populated server-side so
+  // they're kept in this map too — surfaces "Occupation" as a friendly
+  // label if a server error somehow references the legacy path.
+  occupation_category: "Occupation category",
+  occupation_detail: "Occupation details",
+  organisation_name: "Organisation / company name",
+  school_level: "Level of study",
+  occupation: "Occupation",
+  organisation: "Organisation",
   monthly_income: "Monthly income",
   hobbies: "Hobbies",
   trade_unions: "Trade unions",
@@ -140,8 +149,11 @@ const PAGE1_FIELDS = new Set([
   "email",
 ]);
 const PAGE2_FIELDS = new Set([
-  "occupation",
-  "organisation",
+  // New structured shape (post-redesign)
+  "occupation_category",
+  "occupation_detail",
+  "organisation_name",
+  "school_level",
   "monthly_income",
   "hobbies",
   "trade_unions",
@@ -193,8 +205,13 @@ export interface ApplicantDraft {
   twitter: string | null;
   blog: string | null;
   email: string | null;
-  occupation: string | null;
-  organisation: string | null;
+  // Structured occupation + organisation (post-redesign). The legacy
+  // free-text occupation/organisation columns are still readable via
+  // DB but the form no longer collects them directly.
+  occupation_category: string | null;
+  occupation_detail: string | null;
+  organisation_name: string | null;
+  school_level: string | null;
   monthly_income: string | null;
   hobbies: string[] | null;
   trade_unions: string | null;
@@ -268,8 +285,15 @@ export function ApplicantWizard(props: ApplicantWizardProps) {
   const page2Form = useForm<ApplicantPage2>({
     resolver: zodResolver(applicantPage2Schema),
     defaultValues: {
-      occupation: defaultValues.occupation ?? "",
-      organisation: defaultValues.organisation ?? "",
+      // Structured occupation + organisation (post-redesign).
+      // Cast through `as` because the DB returns plain strings and zod's
+      // enum type doesn't narrow at the draft-restore boundary.
+      occupation_category:
+        (defaultValues.occupation_category as ApplicantPage2["occupation_category"]) ?? undefined,
+      occupation_detail: defaultValues.occupation_detail ?? undefined,
+      organisation_name: defaultValues.organisation_name ?? undefined,
+      school_level:
+        (defaultValues.school_level as ApplicantPage2["school_level"]) ?? undefined,
       monthly_income:
         (defaultValues.monthly_income as ApplicantPage2["monthly_income"]) ?? undefined,
       hobbies: defaultValues.hobbies ?? [],
@@ -674,20 +698,13 @@ export function ApplicantWizard(props: ApplicantWizardProps) {
                 <CardDescription>Employment and any memberships you hold.</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
-                <Field
-                  id="occupation"
-                  label="Occupation"
-                  error={page2Form.formState.errors.occupation?.message}
-                >
-                  <Input id="occupation" {...page2Form.register("occupation")} />
-                </Field>
-                <Field
-                  id="organisation"
-                  label="Employer / organisation"
-                  error={page2Form.formState.errors.organisation?.message}
-                >
-                  <Input id="organisation" {...page2Form.register("organisation")} />
-                </Field>
+                {/* Postal-code-first replaced free-text address in PR-1;
+                    this replaces free-text occupation/organisation with
+                    a category-driven structured pair. Server derives
+                    the legacy columns so the PDF + sign page keep working
+                    unchanged. See components/applicant/OccupationOrganisationFields
+                    + lib/applications/occupation.ts. */}
+                <OccupationOrganisationFields form={page2Form} />
                 <TickRow
                   label="Monthly income"
                   options={FORM_TICK_VALUES.monthlyIncome}
