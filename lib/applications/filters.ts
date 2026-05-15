@@ -16,7 +16,7 @@
  */
 import type { ApplicationStatus } from "@/lib/journey/status";
 import { STATUS_GROUP_MAP, type StateGroup } from "./stateGroups";
-import { computeAging, getStatusTimestamp, type RowTimestamps } from "./aging";
+import { computeAging } from "./aging";
 
 export type FilterChipKey =
   | "aging_gt_7"
@@ -28,10 +28,14 @@ export type FilterChipKey =
 /**
  * Minimum row shape a chip predicate can rely on. Real rows (JourneyRow
  * etc.) extend this so they can pass directly without adapters.
+ *
+ * `stateChangedAt` is pre-computed by the loader via getStatusTimestamp
+ * — chip predicates don't re-derive it per row.
  */
-export interface FilterableRow extends RowTimestamps {
+export interface FilterableRow {
   status: ApplicationStatus;
   invitedAt: string | null;
+  stateChangedAt: string | null;
 }
 
 export interface FilterChip {
@@ -48,7 +52,7 @@ export const FILTER_CHIPS: FilterChip[] = [
   {
     key: "aging_gt_7",
     label: "Aging > 7d",
-    match: (r) => computeAging(getStatusTimestamp(r.status, r)).days > 7,
+    match: (r) => computeAging(r.stateChangedAt).days > 7,
   },
   {
     key: "awaiting_referral",

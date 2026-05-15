@@ -6,6 +6,7 @@
 import "server-only";
 import type { createClient } from "@/lib/supabase/server";
 import { JOURNEY_HIDDEN, type ApplicationStatus } from "@/lib/journey/status";
+import { getStatusTimestamp } from "@/lib/applications/aging";
 
 type ServerSupabase = Awaited<ReturnType<typeof createClient>>;
 
@@ -15,7 +16,19 @@ export interface JourneyRow {
   displayName: string;
   referralName: string | null;
   invitedAt: string | null;
+  /** Most recent activity timestamp across ALL phases (legacy column). */
   lastActivityAt: string | null;
+  /**
+   * Timestamp when this row entered its CURRENT status. Drives the
+   * Days-in-state aging dot + the "Aging > 7d" filter chip. See
+   * lib/applications/aging.ts → getStatusTimestamp for the per-status
+   * column mapping.
+   */
+  stateChangedAt: string | null;
+  /** Full constituency name e.g. "SENGKANG GRC". Null for legacy rows
+   *  submitted before the postal-code-first PR shipped. */
+  currentConstituency: string | null;
+  currentConstituencyType: "GRC" | "SMC" | null;
 }
 
 interface RawAppRow {
@@ -37,6 +50,10 @@ interface RawAppRow {
   hq_outcome_recorded_at: string | null;
   archived_at: string | null;
   completed_at: string | null;
+  rejected_at: string | null;
+  created_at: string | null;
+  current_constituency: string | null;
+  current_constituency_type: "GRC" | "SMC" | null;
 }
 
 function lastActivity(r: RawAppRow): string | null {
@@ -66,7 +83,7 @@ export async function loadJourneyApplications(
   const { data: rows } = await supabase
     .from("applications")
     .select(
-      "id, status, applicant_name_at_invite, surname, given_names, assigned_referral_name, applicant_invited_at, applicant_filling_started_at, applicant_signed_at, referral_assigned_at, referral_signed_at, branch_admin_review_at, chairman_signed_at, ready_to_send_at, sent_to_hq_at, hq_outcome_recorded_at, archived_at, completed_at",
+      "id, status, applicant_name_at_invite, surname, given_names, assigned_referral_name, applicant_invited_at, applicant_filling_started_at, applicant_signed_at, referral_assigned_at, referral_signed_at, branch_admin_review_at, chairman_signed_at, ready_to_send_at, sent_to_hq_at, hq_outcome_recorded_at, archived_at, completed_at, rejected_at, created_at, current_constituency, current_constituency_type",
     )
     .eq("branch_id", branchId)
     .order("applicant_invited_at", { ascending: false });
@@ -84,6 +101,12 @@ export async function loadJourneyApplications(
       referralName: r.assigned_referral_name,
       invitedAt: r.applicant_invited_at,
       lastActivityAt: lastActivity(r),
+      // getStatusTimestamp returns the per-phase column matching the
+      // current status (e.g. SENT_TO_HQ → sent_to_hq_at). Drives the
+      // "how long has this been sitting" aging signal.
+      stateChangedAt: getStatusTimestamp(r.status, r),
+      currentConstituency: r.current_constituency,
+      currentConstituencyType: r.current_constituency_type,
     }));
 }
 
