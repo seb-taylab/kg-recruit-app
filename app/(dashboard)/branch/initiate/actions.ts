@@ -13,6 +13,7 @@ import {
 } from "@/lib/auth/magic-link";
 import { getEffectiveSettings } from "@/lib/settings/resolve";
 import { writeAuditLog, writeApplicationEvent } from "@/lib/audit/log";
+import { setShareTokenCookie } from "@/lib/auth/share-token-cookie";
 import { inviteFormSchema } from "@/lib/validation/invite";
 
 export interface CreateInviteState {
@@ -123,9 +124,12 @@ export async function createInviteAction(
   });
 
   // 6. Hand off to the application detail page, which renders the
-  // DeliveryPanel. Raw token is passed via short-lived URL param so the
-  // Branch Admin can copy/email/WhatsApp-share it from one screen — it is
-  // never persisted in plaintext.
+  // DeliveryPanel. Raw token rides in a flash cookie (60s TTL, httpOnly,
+  // sameSite=strict, path-scoped to the detail page) so it never lands
+  // in browser history / server logs / Referer headers. The detail page
+  // reads it via readShareTokenCookie() during render.
+  // Security audit 2026-05-16 finding H4.
+  await setShareTokenCookie(applicationId, rawToken);
   revalidatePath("/branch");
-  redirect(`/branch/applications/${applicationId}?token=${encodeURIComponent(rawToken)}`);
+  redirect(`/branch/applications/${applicationId}`);
 }

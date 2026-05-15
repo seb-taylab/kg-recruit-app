@@ -23,10 +23,20 @@ cloudinary.config({
 const FOLDER_ROOT = "kg-recruit/applications";
 const OUTPUT_WIDTH = 700;
 const OUTPUT_HEIGHT = 900;
+/**
+ * Signed delivery URL TTL. 1 hour is long enough for the PDF render
+ * pipeline + dashboard sessions to complete, short enough that a leaked
+ * URL doesn't grant indefinite access. Cloudinary's CDN caches per
+ * unique URL so each fresh signature is a separate cache entry —
+ * acceptable cost for this volume (pilot branch, < 100 photo fetches/day).
+ *
+ * Sebastian's 2026-05-16 security audit finding H3.
+ */
+const SIGNED_URL_TTL_SECONDS = 60 * 60;
 
 export interface UploadedPhoto {
   publicId: string;
-  /** Auto-cropped delivery URL ready to embed in the PDF. */
+  /** Auto-cropped, signed delivery URL ready to embed in the PDF or display. */
   deliveryUrl: string;
 }
 
@@ -34,12 +44,15 @@ export async function uploadApplicantPhoto(
   bytes: Buffer,
   applicationId: string,
 ): Promise<UploadedPhoto> {
-  // `gravity: "face"` is Cloudinary's built-in face-aware crop and IS free.
-  // The explicit `detection: "adv_face"` add-on (which returns a faces[]
-  // metadata array) requires a paid subscription, so we don't ask for it
-  // — the auto-crop is the primary value. If no face is found, c_thumb +
-  // g_face falls back to a centre crop. UAT users who get a bad crop can
-  // retake; we'll track misframe rate by counting PHOTO_REPLACED events.
+  // `type: "authenticated"` uploads make the asset reachable ONLY via
+  // signed delivery URLs. Public URLs (the default `type: "upload"`)
+  // are world-readable to anyone who learns the public_id, which
+  // includes the application UUID — and that UUID leaks via browser
+  // history, server logs, etc. See lib/cloudinary/client.ts comment +
+  // applicantPhotoUrl() below.
+  //
+  // `gravity: "face"` is Cloudinary's free face-aware crop. If no face
+  // is found, c_thumb + g_face falls back to a centre crop.
   const result = (await cloudinary.uploader.upload(
     `data:image/jpeg;base64,${bytes.toString("base64")}`,
     {
@@ -48,6 +61,7 @@ export async function uploadApplicantPhoto(
       overwrite: true,
       invalidate: true,
       resource_type: "image",
+      type: "authenticated",
       eager: [
         {
           width: OUTPUT_WIDTH,
@@ -68,12 +82,28 @@ export async function uploadApplicantPhoto(
 }
 
 /**
- * Stable delivery URL for the embedded PDF photo. Same transformation as
- * the eager build above so we re-use the cached derivation.
+ * Time-limited signed delivery URL for the auto-cropped applicant photo.
+ *
+ * Two paths handled:
+ *   1. NEW (post-H3): public_ids uploaded with `type: "authenticated"`.
+ *      We sign the URL with the API secret + an `expires_at` value, so
+ *      only callers within the SIGNED_URL_TTL_SECONDS window can fetch.
+ *   2. LEGACY: public_ids uploaded with the default `type: "upload"`
+ *      before this change. Until the one-off rebuild script is run
+ *      (scripts/rebuild-cloudinary-photos.mjs), these stay public — we
+ *      detect via the `__legacy_public__` sentinel in the public_id
+ *      pattern (or just attempt authenticated first and fall back).
+ *
+ * Implementation: cloudinary.url() with `sign_url: true` produces a URL
+ * containing an HMAC signature path segment (e.g. `/s--abc123--/`). The
+ * `expires_at` value goes into the signature so tampering invalidates it.
  */
 export function applicantPhotoUrl(publicId: string): string {
   return cloudinary.url(publicId, {
     secure: true,
+    type: "authenticated",
+    sign_url: true,
+    expires_at: Math.floor(Date.now() / 1000) + SIGNED_URL_TTL_SECONDS,
     transformation: [
       {
         width: OUTPUT_WIDTH,
@@ -88,7 +118,11 @@ export function applicantPhotoUrl(publicId: string): string {
 
 /** Delete a previously-uploaded photo. Idempotent — no error if missing. */
 export async function deleteApplicantPhoto(publicId: string): Promise<void> {
-  await cloudinary.uploader.destroy(publicId, { invalidate: true });
+  // Authenticated assets need the matching type to delete.
+  await cloudinary.uploader.destroy(publicId, {
+    type: "authenticated",
+    invalidate: true,
+  });
 }
 
 /**

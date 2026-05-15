@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { safeInternalPath } from "@/lib/auth/safe-redirect";
 
 const schema = z.object({
   email: z.string().email("That doesn't look like a valid email — check the @ and the domain"),
@@ -55,6 +56,8 @@ export async function signIn(_prev: SignInState | undefined, formData: FormData)
   }
 
   const fallback = profile.role === "taylab_staff" ? "/taylab" : "/branch";
-  const next = parsed.data.next?.startsWith("/") ? parsed.data.next : fallback;
-  redirect(next);
+  // safeInternalPath rejects `//evil.com` (protocol-relative) and any
+  // other shape that could escape the origin via redirect(). See
+  // lib/auth/safe-redirect.ts.
+  redirect(safeInternalPath(parsed.data.next, fallback));
 }

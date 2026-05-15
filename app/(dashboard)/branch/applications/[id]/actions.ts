@@ -21,6 +21,7 @@ import {
 } from "@/lib/auth/magic-link";
 import { getEffectiveSettings } from "@/lib/settings/resolve";
 import { referralAssignmentSchema } from "@/lib/validation/referral";
+import { setShareTokenCookie } from "@/lib/auth/share-token-cookie";
 import {
   referralInviteEmailHtml,
   referralInviteEmailSubject,
@@ -335,9 +336,13 @@ export async function assignReferralAction(
     metadata: { routing_choice: parsed.data.routing_choice },
   });
 
+  // Flash-cookie carrier for the raw token so it never lands in
+  // browser history / server logs / Referer headers. See
+  // lib/auth/share-token-cookie.ts + security audit finding H4.
+  await setShareTokenCookie(applicationId, rawToken);
   revalidatePath(`/branch/applications/${applicationId}`);
   revalidatePath(`/branch/inbox`);
-  redirect(`/branch/applications/${applicationId}?token=${encodeURIComponent(rawToken)}`);
+  redirect(`/branch/applications/${applicationId}`);
 }
 
 const sendReferralInviteSchema = z.object({

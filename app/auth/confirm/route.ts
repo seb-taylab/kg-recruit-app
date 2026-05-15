@@ -17,12 +17,15 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { safeInternalPath } from "@/lib/auth/safe-redirect";
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const token_hash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
-  const next = searchParams.get("next") ?? "/";
+  // Reject protocol-relative + cross-origin destinations before
+  // concatenation — see lib/auth/safe-redirect.ts.
+  const next = safeInternalPath(searchParams.get("next"), "/");
 
   if (!token_hash || !type) {
     return NextResponse.redirect(`${origin}/apply/invalid`);
@@ -36,5 +39,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/apply/invalid`);
   }
 
-  return NextResponse.redirect(`${origin}${next.startsWith("/") ? next : "/"}`);
+  return NextResponse.redirect(`${origin}${next}`);
 }

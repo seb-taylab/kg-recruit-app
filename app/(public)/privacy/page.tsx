@@ -101,8 +101,15 @@ export default function PrivacyPage() {
         <h2 className="mt-8 text-xl font-semibold text-text-primary">4. How long we keep it</h2>
         <ul className="ml-6 list-disc">
           <li>
-            <strong>NRIC scans:</strong> auto-purged within 24 hours of the application being sent
-            to HQ. No copy is retained in the platform after that.
+            <strong>NRIC scans (image files):</strong> auto-purged within 24 hours of the
+            application being sent to HQ. The scan images are deleted from storage; no copy is
+            retained.
+          </li>
+          <li>
+            <strong>NRIC number:</strong> retained in encrypted-at-rest form as part of the
+            application record. PAP HQ requires the number for membership verification and
+            ongoing record-keeping. Access is restricted to the same parties listed in
+            section 3.
           </li>
           <li>
             <strong>All other application data:</strong> retained for seven (7) years from the

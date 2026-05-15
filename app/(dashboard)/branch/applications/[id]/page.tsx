@@ -32,6 +32,7 @@ import {
 } from "@/components/invite/LinkHistory";
 import { ApplicationStatusHistory } from "@/components/branch/journey/ApplicationStatusHistory";
 import { loadApplicationEvents } from "@/lib/journey/application-events";
+import { readShareTokenCookie } from "@/lib/auth/share-token-cookie";
 
 function ttlDaysUntil(expiresAt: string): number {
   return Math.max(
@@ -86,10 +87,8 @@ interface DeliveryQueryRow {
 
 export default async function ApplicationDetailPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ token?: string }>;
 }) {
   const auth = await requireAuth();
   if (!auth.branch || !isBranchRole(auth.profile.role)) {
@@ -100,7 +99,11 @@ export default async function ApplicationDetailPage({
   // signing on /branch/sign/[id].
   const isAdminTeam = isBranchAdminTeam(auth.profile.role);
   const { id } = await params;
-  const { token: rawToken } = await searchParams;
+  // Raw share token (if present) lives in a 60s httpOnly flash cookie
+  // set by the minting action — never in the URL. Security audit finding
+  // H4 (2026-05-16). The DeliveryPanel rendering downstream still
+  // consumes `rawToken` exactly the same way; only the carrier changed.
+  const rawToken = await readShareTokenCookie(id);
 
   const supabase = await createClient();
   const { data: appRow } = await supabase

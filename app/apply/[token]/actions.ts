@@ -15,6 +15,11 @@ import { writeApplicationEvent, writeAuditLog } from "@/lib/audit/log";
 import { uploadApplicantPhoto } from "@/lib/cloudinary/client";
 import { buildLegacyOccupationString } from "@/lib/applications/occupation";
 import type { OccupationCategory } from "@/lib/validation/occupation-organisation";
+import {
+  validateUpload,
+  extensionFor,
+  canonicalContentType,
+} from "@/lib/security/file-upload";
 
 interface ActionResult {
   ok: boolean;
@@ -219,14 +224,24 @@ export async function uploadPhotoAction(
   if (!tokenInput.safeParse({ rawToken }).success) return { ok: false, error: "Bad token." };
   const auth = await authorise(rawToken);
   if (!auth.ok) return { ok: false, error: auth.error };
-  void contentType;
+
+  // Defensive validation BEFORE forwarding to Cloudinary. 5 MB cap +
+  // image/jpeg|png|webp allowlist + magic-byte check. Security audit
+  // 2026-05-16 finding H2.
+  const validated = validateUpload({
+    buffer: fileBuffer,
+    contentType,
+    maxBytes: 5 * 1024 * 1024,
+    allow: ["jpeg", "png", "webp"],
+  });
+  if (!validated.ok) return { ok: false, error: validated.error };
 
   const admin = createAdminClient();
   const appId = auth.verify.application.id;
 
   let uploaded;
   try {
-    uploaded = await uploadApplicantPhoto(Buffer.from(fileBuffer), appId);
+    uploaded = await uploadApplicantPhoto(Buffer.from(validated.bytes), appId);
   } catch (err) {
     return {
       ok: false,
@@ -262,13 +277,30 @@ export async function uploadNricAction(
   const auth = await authorise(rawToken);
   if (!auth.ok) return { ok: false, error: auth.error };
 
+  // Defensive validation: 8 MB cap, image/jpeg|png + application/pdf
+  // allowlist, magic-byte check (so a client can't claim image/jpeg
+  // and upload an HTML payload that a Branch Admin would later click).
+  // Security audit 2026-05-16 finding H1.
+  const validated = validateUpload({
+    buffer: fileBuffer,
+    contentType,
+    maxBytes: 8 * 1024 * 1024,
+    allow: ["jpeg", "png", "pdf"],
+  });
+  if (!validated.ok) return { ok: false, error: validated.error };
+
   const admin = createAdminClient();
   const appId = auth.verify.application.id;
-  const ext = contentType === "application/pdf" ? "pdf" : "jpg";
+  // Use the magic-byte-verified kind for the extension, not the
+  // client-supplied content-type — defence against extension confusion.
+  const ext = extensionFor(validated.kind);
   const path = `${appId}/${side}.${ext}`;
   const { error: uploadErr } = await admin.storage
     .from("nric-uploads")
-    .upload(path, new Uint8Array(fileBuffer), { contentType, upsert: true });
+    .upload(path, validated.bytes, {
+      contentType: canonicalContentType(validated.kind),
+      upsert: true,
+    });
   if (uploadErr) return { ok: false, error: "Couldn't save the scan — try again in a minute." };
 
   // Upsert the nric_uploads row so the path is persisted to DB.
