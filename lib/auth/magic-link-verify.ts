@@ -77,10 +77,16 @@ export async function verifyMagicLink(
 /** Stamps `magic_links.link_opened_at` and writes an anonymous LINK_OPENED event. */
 export async function recordLinkOpened(magicLinkId: string, applicationId: string, branchId: string): Promise<void> {
   const admin = createAdminClient();
+  // Defensive predicate: the UPDATE only fires when this magic_link
+  // actually belongs to the claimed application_id. Not exploitable
+  // today (every caller already verified the pairing) but if this
+  // helper gets reused elsewhere, mismatched arguments no-op rather
+  // than stamping the wrong row. Audit finding L4.
   await admin
     .from("magic_links" as never)
     .update({ link_opened_at: new Date().toISOString() } as never)
     .eq("id", magicLinkId)
+    .eq("application_id", applicationId)
     .is("link_opened_at", null);
 
   await admin.from("application_events" as never).insert({

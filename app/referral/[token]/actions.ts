@@ -7,6 +7,7 @@ import { verifyMagicLink } from "@/lib/auth/magic-link-verify";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { referralSignSchema } from "@/lib/validation/referral";
 import { writeApplicationEvent, writeAuditLog } from "@/lib/audit/log";
+import { isPngBytes } from "@/lib/security/file-upload";
 
 interface ActionResult {
   ok: boolean;
@@ -70,6 +71,11 @@ export async function submitReferralSignatureAction(
   const sigBytes = Buffer.from(match[1], "base64");
   if (sigBytes.byteLength > 200_000) {
     return { ok: false, error: "Signature image is too large. Try again with a simpler drawing." };
+  }
+  // Magic-byte check — the regex only validates the data-URL prefix.
+  // Audit finding L3.
+  if (!isPngBytes(sigBytes)) {
+    return { ok: false, error: "Signature isn't a valid PNG image." };
   }
 
   const sigPath = `${appId}/referral.png`;

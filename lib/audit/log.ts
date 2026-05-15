@@ -10,6 +10,51 @@ import { headers } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { UserRole } from "@/types/database";
 
+/**
+ * PII keys we NEVER want in audit metadata, even when a future refactor
+ * accidentally passes them through. Comparison is lowercased + matched
+ * exactly — so "nric", "NRIC", "Nric_No" all hit. Sub-objects are
+ * recursively scrubbed.
+ *
+ * Sebastian's 2026-05-16 audit, finding M3.
+ */
+const PII_KEYS = new Set([
+  "nric",
+  "nric_no",
+  "password",
+  "passcode",
+  "token",
+  "token_hash",
+  "raw_token",
+  "share_token",
+  "session_token",
+  "access_token",
+  "refresh_token",
+  "secret",
+  "api_key",
+]);
+
+function scrubMetadata(input: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (PII_KEYS.has(key.toLowerCase())) {
+      out[key] = "[REDACTED]";
+    } else if (
+      value !== null &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      !(value instanceof Date)
+    ) {
+      // Recurse into nested objects so a future caller that wraps
+      // metadata in a sub-object still gets scrubbed.
+      out[key] = scrubMetadata(value as Record<string, unknown>);
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
 export type AuditAction =
   | "CREATED"
   | "INVITED"
@@ -66,7 +111,7 @@ export async function writeAuditLog(entry: AuditEntry): Promise<void> {
     actor_email: entry.actorEmail ?? null,
     actor_role: entry.actorRole ?? null,
     action: entry.action,
-    metadata: entry.metadata ?? null,
+    metadata: entry.metadata ? scrubMetadata(entry.metadata) : null,
     ip_address: ip,
     user_agent: ua,
   } as never);
@@ -92,7 +137,7 @@ export async function writeApplicationEvent(opts: {
     event_type: opts.eventType,
     actor_id: opts.actorId ?? null,
     actor_role: opts.actorRole ?? null,
-    metadata: opts.metadata ?? null,
+    metadata: opts.metadata ? scrubMetadata(opts.metadata) : null,
     ip_address: ip,
     user_agent: ua,
   } as never);

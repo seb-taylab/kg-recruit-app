@@ -19,6 +19,7 @@ import {
   validateUpload,
   extensionFor,
   canonicalContentType,
+  isPngBytes,
 } from "@/lib/security/file-upload";
 
 interface ActionResult {
@@ -422,6 +423,11 @@ export async function submitApplicantSignatureAction(
   const sigBytes = Buffer.from(match[1], "base64");
   if (sigBytes.byteLength > 200_000) {
     return { ok: false, error: "Signature image is too large. Try again with a simpler drawing." };
+  }
+  // The regex only checked the data-URL prefix — confirm the decoded
+  // bytes are actually a PNG (8-byte magic header). Audit finding L3.
+  if (!isPngBytes(sigBytes)) {
+    return { ok: false, error: "Signature isn't a valid PNG image." };
   }
 
   const sigPath = `${appId}/applicant.png`;

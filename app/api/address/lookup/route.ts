@@ -17,8 +17,16 @@
  * the postal format before invoking, but we re-validate here.
  */
 import { NextRequest, NextResponse } from "next/server";
+import { consume, ipFromRequest } from "@/lib/security/rate-limit";
 
 export const runtime = "nodejs";
+
+// Token bucket sized for a normal applicant filling the wizard — ~60 burst
+// (way more than anyone needs in one form session) at 1 token/sec sustained
+// (60/min). Locks out scrapers iterating all 1M SG postcodes without
+// affecting real users.
+// Sebastian's 2026-05-16 audit, finding M1.
+const LIMIT_CONFIG = { capacity: 60, refillPerSec: 1 };
 
 export interface AddressLookup {
   postal_code: string;
@@ -55,6 +63,23 @@ const cleanField = (v: unknown): string | null => {
 };
 
 export async function GET(req: NextRequest) {
+  // Per-IP token bucket before any other work. The 429 carries a
+  // Retry-After header so well-behaved clients (and the SDK fetch
+  // inside AddressFields.tsx) back off correctly.
+  const limit = consume(ipFromRequest(req), LIMIT_CONFIG);
+  if (!limit.ok) {
+    return NextResponse.json(
+      {
+        found: false,
+        error: "Too many lookups — try again in a moment.",
+      },
+      {
+        status: 429,
+        headers: { "Retry-After": String(Math.ceil(limit.retryAfterMs / 1000)) },
+      },
+    );
+  }
+
   const postal = req.nextUrl.searchParams.get("postal")?.trim() ?? "";
 
   if (!/^\d{6}$/.test(postal)) {

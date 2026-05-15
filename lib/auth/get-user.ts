@@ -30,9 +30,15 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
+  // Explicit column list — was `select("*")` (audit finding L2). Keeping
+  // the list in sync with the Profile type, but the explicit form means
+  // any future column added to `profiles` requires a deliberate decision
+  // to surface it via getAuthContext rather than auto-leaking.
   const { data: profileRow } = await supabase
     .from("profiles")
-    .select("*")
+    .select(
+      "id, full_name, role, branch_id, position, position_other, membership_no, is_active, deactivated_at, deactivated_by_id, promoted_at, promoted_by_id, created_at, created_by_id",
+    )
     .eq("id", user.id)
     .single();
   const profile = profileRow as Profile | null;
@@ -41,9 +47,13 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
 
   let branch: Branch | null = null;
   if (profile.branch_id) {
+    // Same rationale as profiles above — explicit list matches the
+    // Branch type so a future column addition needs a deliberate decision.
     const { data } = await supabase
       .from("branches")
-      .select("*")
+      .select(
+        "id, name, constituency, hq_email, email_from_display_name, invite_ttl_hours, default_routing_mode, nudge_config, is_active, created_at",
+      )
       .eq("id", profile.branch_id)
       .single();
     branch = (data as Branch | null) ?? null;
