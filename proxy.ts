@@ -27,8 +27,22 @@ function notFoundResponse(request: NextRequest) {
 }
 
 export async function proxy(request: NextRequest) {
-  const { response, supabase, user } = await updateSession(request);
   const { pathname } = request.nextUrl;
+
+  // Truly public routes — no session to gate, no role to check. Skipping
+  // `updateSession` here means we don't pay the auth.getUser() + cookie
+  // refresh round-trip on the applicant magic-link flow, the referral
+  // sign flow, or the auth callbacks (which manage cookies themselves).
+  // Trims ~20-30ms off these flows.
+  if (
+    pathname.startsWith("/apply/") ||
+    pathname.startsWith("/referral/") ||
+    pathname.startsWith("/auth/")
+  ) {
+    return NextResponse.next();
+  }
+
+  const { response, supabase, user } = await updateSession(request);
 
   const isBranchPath = pathname === "/branch" || pathname.startsWith("/branch/");
   const isTaylabPath = pathname === "/taylab" || pathname.startsWith("/taylab/");
