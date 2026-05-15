@@ -65,18 +65,37 @@ function NricSide({
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      setError("Scan is too large (max 5 MB). Try a smaller image.");
+    if (file.size > 8 * 1024 * 1024) {
+      // Match the server-side cap (lib/security/file-upload.ts allows 8 MB
+      // for NRIC). The old 5 MB client cap was tighter than the server,
+      // which is fine, but kept misaligned messages for borderline files.
+      setError("Scan is too large (max 8 MB). Try a smaller image.");
       return;
     }
     setError(null);
     setBusy(true);
+    // Hold the previous preview so we can revert on failure. Optimistic
+    // update only commits if the server accepts the file.
+    const previousPreview = preview;
+    const optimisticUrl = URL.createObjectURL(file);
+    setPreview(optimisticUrl);
     try {
-      const url = URL.createObjectURL(file);
-      setPreview(url);
       await onUpload(file);
-    } catch {
-      setError("Couldn't upload — try again in a minute.");
+      // Success — keep the optimistic preview; release the previous
+      // blob URL if it was a client-side preview (initialUrl from the
+      // server stays a string URL, not a blob).
+    } catch (err) {
+      // Revert the preview AND release the optimistic blob URL so we
+      // don't leak object URLs. Surface the server's actual error
+      // message so the user knows WHY (e.g. "Unsupported file type
+      // 'image/heic'.") rather than the old generic fallback.
+      setPreview(previousPreview);
+      URL.revokeObjectURL(optimisticUrl);
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : "Couldn't upload — try again in a minute.",
+      );
     } finally {
       setBusy(false);
     }
