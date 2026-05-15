@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { ArrowDown } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { requireAuth } from "@/lib/auth/get-user";
@@ -266,6 +267,37 @@ export default async function ChairmanSignDetailPage({
           {formatDateDDMMMYYYY(app.referral_signed_at)}
         </p>
       </header>
+
+      {/* ACTION CALLOUT — sits between the page header and all the read-
+          only review cards so the Chairman sees what's expected of them
+          before scrolling. Brand-red top accent makes it pop visually
+          against the (otherwise grey-and-white) information cards. The
+          Jump anchor scrolls to #chairman-actions inside ChairmanSignForm. */}
+      <Card className="border-t-4 border-t-brand-red">
+        <CardHeader>
+          <CardTitle>Your actions</CardTitle>
+          <CardDescription>
+            Two things to do at the bottom of this page.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <ol className="flex list-decimal flex-col gap-2 pl-5 text-sm text-text-primary marker:font-semibold marker:text-brand-red">
+            <li>
+              <span className="font-medium">Confirm how long you&rsquo;ve known {applicantDisplay}</span>
+            </li>
+            <li>
+              <span className="font-medium">Sign the application</span>
+            </li>
+          </ol>
+          <a
+            href="#chairman-actions"
+            className="inline-flex w-fit items-center gap-2 rounded-md bg-brand-red px-4 py-2 text-sm font-semibold text-text-inverse transition-colors duration-fast hover:opacity-90"
+          >
+            <span>Jump to actions</span>
+            <ArrowDown className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
+          </a>
+        </CardContent>
+      </Card>
 
       {/* HERO: big photo + identity quick-read so the Chairman can match
           the face to the name at a glance before scrolling. Stacks on

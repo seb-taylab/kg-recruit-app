@@ -9,6 +9,12 @@
  *   - chairman_name_on_form (editable; pre-filled from profiles.full_name; Addendum Gap 5)
  *   - chairman_known_years
  *   - signature
+ *
+ * Visual treatment: each card carries a brand-red left accent and an
+ * explicit "Step N — …" title so the action items stand out against the
+ * read-only review cards above. The whole block is wrapped in an anchor
+ * target (#chairman-actions) so the "Jump to actions" CTA at the top of
+ * the page scrolls straight here.
  */
 "use client";
 
@@ -59,39 +65,33 @@ export function ChairmanSignForm({
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    // scroll-mt-4 nudges the anchor jump down a little so the first
+    // card title isn't pinned to the very top edge.
+    <div id="chairman-actions" className="flex scroll-mt-4 flex-col gap-4">
       {serverError && (
         <Alert variant="destructive">
           <AlertDescription>{serverError}</AlertDescription>
         </Alert>
       )}
 
-      <Card>
+      {/* STEP 1 — Confirm the two fields that print on the PDF.
+          Years known comes FIRST: it's the only field the Chairman
+          must type from scratch. Name pre-fills from the profile and
+          almost always stays as-is. */}
+      <Card className="border-l-4 border-l-brand-red">
         <CardHeader>
-          <CardTitle>Your details on the form</CardTitle>
+          <CardTitle>
+            <span className="text-brand-red">Step 1</span> &middot; Confirm your details
+          </CardTitle>
           <CardDescription>
-            These appear on the signed PDF. Confirm before signing.
+            These two fields print on the signed PDF.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <Field
-            id="chairman_name_on_form"
-            label="Name to print on form"
-            helper="This appears on the signed PDF as your printed name. Edit if needed."
-            error={fieldErrors.chairman_name_on_form}
-          >
-            <Input
-              id="chairman_name_on_form"
-              value={nameOnForm}
-              onChange={(e) => setNameOnForm(e.target.value)}
-              autoComplete="name"
-              required
-              hasError={Boolean(fieldErrors.chairman_name_on_form)}
-            />
-          </Field>
-          <Field
             id="chairman_known_years"
-            label={`Years you've known ${applicantDisplayName}`}
+            label={`How long have you known ${applicantDisplayName}?`}
+            helper="In years. Whole numbers only."
             error={fieldErrors.chairman_known_years}
           >
             <Input
@@ -106,15 +106,34 @@ export function ChairmanSignForm({
               max={99}
               inputMode="numeric"
               required
+              autoFocus
               hasError={Boolean(fieldErrors.chairman_known_years)}
+            />
+          </Field>
+          <Field
+            id="chairman_name_on_form"
+            label="Name to print on form"
+            helper="Pre-filled from your profile. Edit only if the PDF should show a different name."
+            error={fieldErrors.chairman_name_on_form}
+          >
+            <Input
+              id="chairman_name_on_form"
+              value={nameOnForm}
+              onChange={(e) => setNameOnForm(e.target.value)}
+              autoComplete="name"
+              required
+              hasError={Boolean(fieldErrors.chairman_name_on_form)}
             />
           </Field>
         </CardContent>
       </Card>
 
-      <Card>
+      {/* STEP 2 — Capture the signature. */}
+      <Card className="border-l-4 border-l-brand-red">
         <CardHeader>
-          <CardTitle>Sign application</CardTitle>
+          <CardTitle>
+            <span className="text-brand-red">Step 2</span> &middot; Sign application
+          </CardTitle>
           <CardDescription>
             By signing, you confirm you&rsquo;ve reviewed {applicantDisplayName}&rsquo;s
             application and approve it for HQ.
