@@ -31,6 +31,22 @@ const SECURITY_HEADERS = [
 ];
 
 const nextConfig: NextConfig = {
+  // Server Actions default to a 1 MB body-size limit. The applicant
+  // wizard uploads NRIC scans (up to 8 MB per our server-side cap) and
+  // applicant photos (up to 5 MB) via server actions, so the default
+  // rejects every NRIC upload at the framework boundary BEFORE the
+  // action runs — surfacing as a generic "unexpected response from the
+  // server" on the client.
+  //
+  // 10 MB gives comfortable headroom over both server-side caps and
+  // still bounds memory use per invocation. Real validation (MIME +
+  // size + magic bytes) happens inside the action via
+  // lib/security/file-upload.ts.
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "10mb",
+    },
+  },
   async headers() {
     return [
       {
