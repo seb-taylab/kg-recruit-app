@@ -76,7 +76,15 @@ export function MobileMoreSheet({ open, onOpenChange, overflow }: MobileMoreShee
           </ul>
         )}
 
-        <div className="border-t border-border pt-4">
+        {/* Sign-out separator only renders when there's a nav list above
+            it to divide. Chairmen (no overflow items) see Sign out as the
+            sole content of the sheet — a stray top border there would
+            look broken. */}
+        <div
+          className={cn(
+            overflow.length > 0 && "border-t border-border pt-4",
+          )}
+        >
           <form action="/auth/logout" method="post">
             <Button type="submit" variant="outline" className="w-full justify-center">
               <LogOut className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />

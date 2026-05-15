@@ -35,8 +35,11 @@ export function MobileBottomNav({ role }: MobileBottomNavProps) {
   // user can see "you're in a less-common surface" rather than no tab lit.
   const moreActive = overflow.some((item) => isNavItemActive(item.href, pathname));
 
-  // Total cells = primary tabs + (More button if there's any overflow).
-  const cellCount = primary.length + (overflow.length > 0 ? 1 : 0);
+  // Total cells = primary tabs + More button. More ALWAYS renders, even
+  // when overflow is empty (e.g. Chairman, who has no History/Team/
+  // Settings access), because Sign out lives in the More sheet — without
+  // this slot the user would have no way to log out on mobile.
+  const cellCount = primary.length + 1;
 
   return (
     <>
@@ -76,28 +79,26 @@ export function MobileBottomNav({ role }: MobileBottomNavProps) {
             );
           })}
 
-          {overflow.length > 0 && (
-            <li className="flex">
-              <button
-                type="button"
-                onClick={() => setMoreOpen(true)}
-                aria-haspopup="dialog"
-                aria-expanded={moreOpen}
-                aria-label="More navigation"
-                className={cn(
-                  "flex min-h-12 w-full flex-col items-center justify-center gap-1 px-1 py-2 text-xs font-medium leading-tight transition-colors duration-fast",
-                  moreActive ? "text-brand-red" : "text-text-secondary hover:text-text-primary",
-                )}
-              >
-                <MoreHorizontal
-                  className="h-5 w-5 shrink-0"
-                  strokeWidth={moreActive ? 2 : 1.5}
-                  aria-hidden="true"
-                />
-                <span>More</span>
-              </button>
-            </li>
-          )}
+          <li className="flex">
+            <button
+              type="button"
+              onClick={() => setMoreOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={moreOpen}
+              aria-label="More navigation"
+              className={cn(
+                "flex min-h-12 w-full flex-col items-center justify-center gap-1 px-1 py-2 text-xs font-medium leading-tight transition-colors duration-fast",
+                moreActive ? "text-brand-red" : "text-text-secondary hover:text-text-primary",
+              )}
+            >
+              <MoreHorizontal
+                className="h-5 w-5 shrink-0"
+                strokeWidth={moreActive ? 2 : 1.5}
+                aria-hidden="true"
+              />
+              <span>More</span>
+            </button>
+          </li>
         </ul>
       </nav>
 
