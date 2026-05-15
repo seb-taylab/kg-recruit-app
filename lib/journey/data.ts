@@ -87,47 +87,8 @@ export async function loadJourneyApplications(
     }));
 }
 
-export interface TimelineEventRow {
-  id: string;
-  applicationId: string;
-  applicantName: string;
-  eventType: string;
-  occurredAt: string;
-  actorRole: string | null;
-}
-
-interface RawEventRow {
-  id: string;
-  application_id: string;
-  event_type: string;
-  occurred_at: string;
-  actor_role: string | null;
-  applications: { surname: string | null; given_names: string | null; applicant_name_at_invite: string | null } | null;
-}
-
-export async function loadJourneyEvents(
-  supabase: ServerSupabase,
-  branchId: string,
-  limit = 100,
-): Promise<TimelineEventRow[]> {
-  const { data: rows } = await supabase
-    .from("application_events")
-    .select(
-      "id, application_id, event_type, occurred_at, actor_role, applications!inner(surname, given_names, applicant_name_at_invite)",
-    )
-    .eq("branch_id", branchId)
-    .order("occurred_at", { ascending: false })
-    .limit(limit);
-  const raw = (rows as unknown as RawEventRow[] | null) ?? [];
-  return raw.map((e) => ({
-    id: e.id,
-    applicationId: e.application_id,
-    applicantName:
-      (e.applications?.given_names && e.applications?.surname
-        ? `${e.applications.given_names} ${e.applications.surname}`
-        : e.applications?.applicant_name_at_invite) ?? "(no name on record)",
-    eventType: e.event_type,
-    occurredAt: e.occurred_at,
-    actorRole: e.actor_role,
-  }));
-}
+// The branch-wide TimelineEventRow + loadJourneyEvents helper used to
+// live here. They were relocated on 2026-05-16 to a per-application
+// loader (lib/journey/application-events.ts) when the top-level
+// "Timeline" tab was killed and the history moved onto the application
+// detail page.

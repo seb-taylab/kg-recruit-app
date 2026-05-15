@@ -3,18 +3,23 @@
  * @design-spec KG_DesignSystem_v1.md §2 (Segmented control via Link group)
  * @used-by app/(dashboard)/branch/journey/page.tsx
  *
+ * Two-tab switcher: Table / Kanban. The branch-wide Timeline view was
+ * removed on 2026-05-16 — per-application history now lives on the
+ * application detail page (see ApplicationStatusHistory). Map view is
+ * not currently planned as a top-level tab; if branch reporting by
+ * constituency ships, it'll live on the overview page, not here.
+ *
  * Server component — each variant is a plain <Link> preserving any other
  * query params. Keeps the route bookmarkable / shareable.
  */
 import Link from "next/link";
 import { cn } from "@/lib/utils/cn";
 
-export type JourneyView = "table" | "kanban" | "timeline";
+export type JourneyView = "table" | "kanban";
 
 const VIEWS: { value: JourneyView; label: string }[] = [
   { value: "table", label: "Table" },
   { value: "kanban", label: "Kanban" },
-  { value: "timeline", label: "Timeline" },
 ];
 
 interface JourneyViewSwitcherProps {

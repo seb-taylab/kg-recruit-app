@@ -1,27 +1,20 @@
 /**
  * @tier organism
  * @design-spec KG_DesignSystem_v1.md §3 (Timeline pattern)
- * @consumes ui/Card
- * @used-by app/(dashboard)/branch/journey/page.tsx
+ * @used-by app/(dashboard)/branch/applications/[id]/page.tsx (Status history disclosure)
  *
- * Chronological event stream across the whole branch — reverse-sorted
- * (newest first). Each event links back to its application detail page.
+ * Per-application event stream rendered as a vertical timeline. Replaces
+ * the branch-wide JourneyTimeline view (which was killed per Sebastian's
+ * 2026-05-15 directive) — relocated here so the history lives WITH the
+ * application it belongs to, not as a separate top-level surface.
+ *
+ * Receives a pre-loaded events array (lib/journey/application-events.ts).
+ * Server-rendered; no client interactivity needed.
  */
-import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
-
-export interface TimelineRow {
-  id: string;
-  applicationId: string;
-  applicantName: string;
-  eventType: string;
-  occurredAt: string;
-  actorRole: string | null;
-}
+import type { ApplicationEventRow } from "@/lib/journey/application-events";
 
 function eventLabel(eventType: string): string {
-  // Friendly mapping; falls back to title-cased event_type for forward
-  // compatibility with future events not enumerated here.
   const map: Record<string, string> = {
     CREATED: "Application created",
     INVITED: "Applicant invited",
@@ -37,6 +30,8 @@ function eventLabel(eventType: string): string {
     ARCHIVED: "Archived",
     UNARCHIVED: "Unarchived",
     NUDGE_SENT: "Nudge sent",
+    // Falls through to the title-cased fallback below for forward
+    // compatibility with future event types.
   };
   return (
     map[eventType] ??
@@ -59,7 +54,11 @@ function formatTimestamp(iso: string): string {
   });
 }
 
-export function JourneyTimeline({ events }: { events: TimelineRow[] }) {
+export function ApplicationStatusHistory({
+  events,
+}: {
+  events: ApplicationEventRow[];
+}) {
   if (events.length === 0) {
     return (
       <Card>
@@ -89,25 +88,18 @@ export function JourneyTimeline({ events }: { events: TimelineRow[] }) {
                   className="h-2 w-2 rounded-full bg-brand-blue"
                 />
                 {i !== events.length - 1 && (
-                  <span
-                    aria-hidden="true"
-                    className="mt-1 w-px flex-1 bg-border"
-                  />
+                  <span aria-hidden="true" className="mt-1 w-px flex-1 bg-border" />
                 )}
               </div>
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <p className="text-sm font-medium text-text-primary">
                   {eventLabel(e.eventType)}
                 </p>
-                <p className="text-sm text-text-secondary">
-                  <Link
-                    href={`/branch/applications/${e.applicationId}`}
-                    className="font-medium text-brand-blue hover:underline"
-                  >
-                    {e.applicantName}
-                  </Link>
-                  {e.actorRole ? ` · by ${e.actorRole.replace(/_/g, " ")}` : ""}
-                </p>
+                {e.actorRole && (
+                  <p className="text-sm text-text-secondary">
+                    by {e.actorRole.replace(/_/g, " ")}
+                  </p>
+                )}
                 <p className="text-xs text-text-muted">{formatTimestamp(e.occurredAt)}</p>
               </div>
             </li>

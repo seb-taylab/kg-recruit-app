@@ -30,6 +30,8 @@ import {
   LinkHistory,
   type LinkDeliveryRow,
 } from "@/components/invite/LinkHistory";
+import { ApplicationStatusHistory } from "@/components/branch/journey/ApplicationStatusHistory";
+import { loadApplicationEvents } from "@/lib/journey/application-events";
 
 function ttlDaysUntil(expiresAt: string): number {
   return Math.max(
@@ -190,6 +192,12 @@ export default async function ApplicationDetailPage({
 
   const fullPhoneVisible =
     auth.profile.role === "branch_master_admin" || auth.profile.role === "branch_admin";
+
+  // Status history — every transition this application has been through.
+  // Replaces the branch-wide Journey Timeline (deleted in the same PR)
+  // with a per-application view that lives WITH the application it
+  // belongs to. Loaded server-side so the disclosure is instant on open.
+  const statusEvents = await loadApplicationEvents(supabase, app.id);
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
@@ -528,6 +536,22 @@ export default async function ApplicationDetailPage({
       ))}
 
       {isAdminTeam && <LinkHistory deliveries={deliveries} />}
+
+      {/* Status history — collapsible by default because most reviews
+          don't need it, but it's the canonical "what happened when"
+          for this application. Native <details> is the lowest-cost
+          accessible disclosure — no JS, no Radix dep. */}
+      <details className="rounded-md border border-border bg-surface-card open:bg-surface-page">
+        <summary className="flex cursor-pointer items-center justify-between px-4 py-3 text-sm font-semibold text-text-primary marker:hidden [&::-webkit-details-marker]:hidden">
+          <span>Status history</span>
+          <span className="text-xs font-normal text-text-muted">
+            {statusEvents.length} event{statusEvents.length === 1 ? "" : "s"}
+          </span>
+        </summary>
+        <div className="border-t border-border p-4">
+          <ApplicationStatusHistory events={statusEvents} />
+        </div>
+      </details>
 
       {isAdminTeam && app.status !== "ARCHIVED" && (
         <div className="flex justify-end pt-4">
