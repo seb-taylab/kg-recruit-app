@@ -408,7 +408,16 @@ export async function submitApplicantSignatureAction(
   const { data: row } = await admin
     .from("applications" as never)
     .select(
-      "surname, given_names, nric_no, chinese_name, home_address, postal_code, block_number, street_name, building_name, unit_number, latitude, longitude, housing_type, hdb_rooms, date_of_birth, place_of_birth, race, gender, marital_status, tel_home, tel_office, tel_hp, highest_edu, written_languages, spoken_languages, facebook, linkedin, twitter, blog, email, occupation, organisation, monthly_income, hobbies, trade_unions, associations, clubs, ccc, ccmc, rnc, grassroots, applicant_photo_url, consent_pdpa",
+      // NOTE: occupation_category / occupation_detail / organisation_name
+      // / school_level are the new structured occupation fields (PR-2 redesign,
+      // migrations/20260516000003_occupation_organisation_redesign.sql). They
+      // MUST be selected here — the legacy `occupation` + `organisation`
+      // columns no longer satisfy applicantFullSchema's
+      // occupationOrganisationSchema. Omitting them previously surfaced as
+      // "Occupation category (Step 2): Pick one" on the signature submit
+      // even though the row had the value populated (because we never
+      // SELECTed it back, the schema saw `undefined`).
+      "surname, given_names, nric_no, chinese_name, home_address, postal_code, block_number, street_name, building_name, unit_number, latitude, longitude, housing_type, hdb_rooms, date_of_birth, place_of_birth, race, gender, marital_status, tel_home, tel_office, tel_hp, highest_edu, written_languages, spoken_languages, facebook, linkedin, twitter, blog, email, occupation, organisation, occupation_category, occupation_detail, organisation_name, school_level, monthly_income, hobbies, trade_unions, associations, clubs, ccc, ccmc, rnc, grassroots, applicant_photo_url, consent_pdpa",
     )
     .eq("id", appId)
     .single();

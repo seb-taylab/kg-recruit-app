@@ -117,14 +117,21 @@ export const applicantPage1Schema = z.object({
       (v) => v === undefined || SG_UNIT_REGEX.test(v),
       "Format: #FLOOR-UNIT, e.g. #08-123 or #15-04A",
     ),
-  latitude: z
+  // Postgres `numeric(10,7)` columns come back from PostgREST/Supabase as
+  // STRINGS, not numbers, to preserve precision over JSON. The client side
+  // sees numbers (OneMap returns them as numeric JSON) but the signature
+  // submit re-reads the row from the DB and runs this schema against the
+  // STRING. Use `z.coerce.number()` so both shapes parse — server-side
+  // re-validation no longer fails with "Expected number, received string"
+  // and silently maps to a misleading FIELD_LABELS lookup on the wizard.
+  latitude: z.coerce
     .number()
     .min(SG_LAT_MIN, "Coordinates out of Singapore range")
     .max(SG_LAT_MAX, "Coordinates out of Singapore range")
     .nullable()
     .optional()
     .transform((v) => (v === null ? undefined : v)),
-  longitude: z
+  longitude: z.coerce
     .number()
     .min(SG_LNG_MIN, "Coordinates out of Singapore range")
     .max(SG_LNG_MAX, "Coordinates out of Singapore range")
