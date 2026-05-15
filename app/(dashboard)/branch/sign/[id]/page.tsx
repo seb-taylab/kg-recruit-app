@@ -4,24 +4,73 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { requireAuth } from "@/lib/auth/get-user";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatDateDDMMMYYYY } from "@/lib/format/date";
+import { formatPhoneDisplay } from "@/lib/format/phone";
 import { ChairmanSignForm } from "@/components/branch/ChairmanSignForm";
+import { applicantPhotoUrl, isCloudinaryPublicId } from "@/lib/cloudinary/client";
 
 export const dynamic = "force-dynamic";
 
+// All fields used to populate the form ownership: applicant + referral
+// blocks. We also pull a few that are NULL-checked for "are there any
+// memberships / hobbies / social links?" expand-only sections so the
+// Chairman doesn't open empty disclosures.
 interface ApplicationRow {
   id: string;
   branch_id: string;
   status: string;
+
+  // Identity / display
   surname: string | null;
   given_names: string | null;
+  name: string | null;
+  chinese_name: string | null;
   applicant_name_at_invite: string | null;
   nric_no: string | null;
   date_of_birth: string | null;
   place_of_birth: string | null;
+  applicant_photo_url: string | null;
+
+  // Demographics
+  race: string | null;
+  gender: string | null;
+  marital_status: string | null;
+  housing_type: string | null;
+  hdb_rooms: number | null;
+  highest_edu: string | null;
+  written_languages: string[] | null;
+  spoken_languages: string[] | null;
+
+  // Contact / address
+  home_address: string | null;
+  postal_code: string | null;
+  tel_home: string | null;
+  tel_office: string | null;
+  tel_hp: string | null;
+  email: string | null;
+
+  // Work
   occupation: string | null;
   organisation: string | null;
+  monthly_income: string | null;
+
+  // Online presence (almost always empty — expand-only)
+  facebook: string | null;
+  linkedin: string | null;
+  twitter: string | null;
+  blog: string | null;
+
+  // Community + hobbies (expand-only)
+  hobbies: string[] | null;
+  trade_unions: string | null;
+  associations: string | null;
+  clubs: string | null;
+  ccc: string | null;
+  ccmc: string | null;
+  rnc: string | null;
+  grassroots: string | null;
+
+  // Workflow + signatures
   applicant_signed_at: string | null;
-  applicant_photo_url: string | null;
   assigned_referral_name: string | null;
   assigned_referral_membership_no: string | null;
   assigned_referral_known_years: number | null;
@@ -35,6 +84,19 @@ interface SignatureRow {
   signature_png_url: string;
   signed_at: string | null;
 }
+
+const APP_COLUMNS = [
+  "id, branch_id, status",
+  "surname, given_names, name, chinese_name, applicant_name_at_invite",
+  "nric_no, date_of_birth, place_of_birth, applicant_photo_url",
+  "race, gender, marital_status, housing_type, hdb_rooms, highest_edu",
+  "written_languages, spoken_languages",
+  "home_address, postal_code, tel_home, tel_office, tel_hp, email",
+  "occupation, organisation, monthly_income",
+  "facebook, linkedin, twitter, blog",
+  "hobbies, trade_unions, associations, clubs, ccc, ccmc, rnc, grassroots",
+  "applicant_signed_at, assigned_referral_name, assigned_referral_membership_no, assigned_referral_known_years, referral_signed_at, chairman_name_on_form",
+].join(", ");
 
 export default async function ChairmanSignDetailPage({
   params,
@@ -98,9 +160,7 @@ export default async function ChairmanSignDetailPage({
   const admin = createAdminClient();
   const { data: appRow } = await admin
     .from("applications" as never)
-    .select(
-      "id, branch_id, status, surname, given_names, applicant_name_at_invite, nric_no, date_of_birth, place_of_birth, occupation, organisation, applicant_signed_at, applicant_photo_url, assigned_referral_name, assigned_referral_membership_no, assigned_referral_known_years, referral_signed_at, chairman_name_on_form",
-    )
+    .select(APP_COLUMNS)
     .eq("id", id)
     .single();
   const app = appRow as ApplicationRow | null;
@@ -126,13 +186,20 @@ export default async function ChairmanSignDetailPage({
     );
   }
 
-  // Signed URL for the applicant photo (1-hour TTL, same as referral side).
+  // Resolve the photo URL — modern uploads are Cloudinary public IDs, but
+  // older applications still store a Supabase Storage path. Mirror the
+  // logic in app/(dashboard)/branch/applications/[id]/page.tsx so the
+  // photo never silently 404s here.
   let applicantPhotoSignedUrl: string | null = null;
   if (app.applicant_photo_url) {
-    const { data: signed } = await admin.storage
-      .from("applicant-photos")
-      .createSignedUrl(app.applicant_photo_url, 60 * 60);
-    applicantPhotoSignedUrl = signed?.signedUrl ?? null;
+    if (isCloudinaryPublicId(app.applicant_photo_url)) {
+      applicantPhotoSignedUrl = applicantPhotoUrl(app.applicant_photo_url);
+    } else {
+      const { data: signed } = await admin.storage
+        .from("applicant-photos")
+        .createSignedUrl(app.applicant_photo_url, 60 * 60);
+      applicantPhotoSignedUrl = signed?.signedUrl ?? null;
+    }
   }
 
   // Load both prior signatures + sign each with a 1-hour TTL.
@@ -157,6 +224,37 @@ export default async function ChairmanSignDetailPage({
       : app.applicant_name_at_invite) ?? "the applicant";
   const referralName = app.assigned_referral_name ?? "—";
 
+  // Age in years from DOB — useful for face/photo cross-check.
+  const ageYears = ageFromDob(app.date_of_birth);
+
+  // Housing summary collapses HDB + rooms into one human-readable string.
+  const housingSummary = formatHousing(app.housing_type, app.hdb_rooms);
+  const incomeSummary = app.monthly_income ?? null;
+  const writtenLangs = (app.written_languages ?? []).join(", ") || null;
+  const spokenLangs = (app.spoken_languages ?? []).join(", ") || null;
+
+  // Three potentially-empty sections — we hide the disclosure entirely if
+  // there's nothing inside, rather than showing an "expand → see nothing"
+  // dead end.
+  const hasHobbies = (app.hobbies ?? []).some((h) => h && h.trim().length > 0);
+  const memberships = [
+    { label: "Trade unions", value: app.trade_unions },
+    { label: "Associations", value: app.associations },
+    { label: "Clubs / societies", value: app.clubs },
+    { label: "Citizens' Consultative Committee", value: app.ccc },
+    { label: "CCMC", value: app.ccmc },
+    { label: "RNC", value: app.rnc },
+    { label: "Grassroots", value: app.grassroots },
+  ].filter((m) => m.value && m.value.trim().length > 0);
+  const hasMemberships = memberships.length > 0;
+  const socials = [
+    { label: "Facebook", value: app.facebook },
+    { label: "LinkedIn", value: app.linkedin },
+    { label: "Twitter", value: app.twitter },
+    { label: "Blog", value: app.blog },
+  ].filter((s) => s.value && s.value.trim().length > 0);
+  const hasSocials = socials.length > 0;
+
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
       <header className="flex flex-col gap-2">
@@ -169,49 +267,190 @@ export default async function ChairmanSignDetailPage({
         </p>
       </header>
 
+      {/* HERO: big photo + identity quick-read so the Chairman can match
+          the face to the name at a glance before scrolling. Stacks on
+          mobile, side-by-side from sm: up. */}
       <Card>
         <CardHeader>
-          <CardTitle>Applicant summary</CardTitle>
-          <CardDescription>Review before signing.</CardDescription>
+          <CardTitle>Applicant</CardTitle>
+          <CardDescription>Confirm you recognise this person before signing.</CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-3 text-sm">
-          <SummaryRow label="Name" value={applicantDisplay} />
-          <SummaryRow label="NRIC" value={app.nric_no} />
+        <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-start">
+          {applicantPhotoSignedUrl ? (
+            /* eslint-disable-next-line @next/next/no-img-element -- presigned / CDN URL */
+            <img
+              src={applicantPhotoSignedUrl}
+              alt={`Photo of ${applicantDisplay}`}
+              width={160}
+              height={206}
+              className="h-auto w-40 shrink-0 rounded-md border border-border object-cover"
+            />
+          ) : (
+            <div className="flex h-52 w-40 shrink-0 items-center justify-center rounded-md border border-dashed border-border text-xs text-text-muted">
+              No photo on file
+            </div>
+          )}
+          <div className="flex flex-1 flex-col gap-3 text-sm">
+            <div>
+              <p className="text-xs text-text-muted">Full name (as in NRIC)</p>
+              <p className="text-lg font-semibold text-text-primary">{applicantDisplay}</p>
+              {app.chinese_name && (
+                <p className="text-base font-medium text-text-secondary">{app.chinese_name}</p>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <SummaryRow label="NRIC" value={app.nric_no} />
+              <SummaryRow
+                label="Date of birth"
+                value={
+                  app.date_of_birth
+                    ? `${formatDateDDMMMYYYY(app.date_of_birth)}${ageYears != null ? ` · ${ageYears} y/o` : ""}`
+                    : null
+                }
+              />
+              <SummaryRow label="Place of birth" value={app.place_of_birth} />
+              <SummaryRow label="Mobile" value={formatPhoneDisplay(app.tel_hp)} />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* PERSONAL PARTICULARS — always visible. Two-column grid on sm+. */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Personal particulars</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+          <SummaryRow label="Race" value={app.race} />
+          <SummaryRow label="Gender" value={app.gender} />
+          <SummaryRow label="Marital status" value={app.marital_status} />
+          <SummaryRow label="Housing" value={housingSummary} />
+          <SummaryRow label="Highest education" value={app.highest_edu} />
+          <SummaryRow label="Written languages" value={writtenLangs} />
+          <SummaryRow label="Spoken languages" value={spokenLangs} />
+        </CardContent>
+      </Card>
+
+      {/* CONTACT + ADDRESS — always visible. */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Contact &amp; address</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
           <SummaryRow
-            label="Date of birth"
-            value={formatDateDDMMMYYYY(app.date_of_birth)}
+            label="Home address"
+            value={
+              app.home_address && app.postal_code
+                ? `${app.home_address}\nSingapore ${app.postal_code}`
+                : app.home_address ?? null
+            }
+            wholeRow
           />
-          <SummaryRow label="Place of birth" value={app.place_of_birth} />
-          <SummaryRow label="Occupation" value={app.occupation} />
-          <SummaryRow label="Organisation" value={app.organisation} />
-          <SummaryRow label="Referral" value={referralName} />
+          <SummaryRow label="Mobile" value={formatPhoneDisplay(app.tel_hp)} />
+          <SummaryRow label="Email" value={app.email} />
+          <SummaryRow label="Home phone" value={formatPhoneDisplay(app.tel_home)} />
+          <SummaryRow label="Office phone" value={formatPhoneDisplay(app.tel_office)} />
+        </CardContent>
+      </Card>
+
+      {/* WORK — always visible. */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Work</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+          <SummaryRow label="Occupation" value={app.occupation} wholeRow />
+          <SummaryRow label="Organisation" value={app.organisation} wholeRow />
+          <SummaryRow label="Monthly income" value={incomeSummary} />
+        </CardContent>
+      </Card>
+
+      {/* REFERRAL — always visible. The Chairman is signing on the
+          referral's vouching, so this needs to be unmissable. */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Referred by</CardTitle>
+          <CardDescription>Who is vouching for this applicant.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+          <SummaryRow label="Name" value={referralName} />
           <SummaryRow
-            label="Referral membership"
+            label="Membership no."
             value={app.assigned_referral_membership_no}
           />
           <SummaryRow
-            label="Referral has known the applicant for"
+            label="Has known the applicant for"
             value={
               app.assigned_referral_known_years != null
                 ? `${app.assigned_referral_known_years} year${app.assigned_referral_known_years === 1 ? "" : "s"}`
                 : null
             }
           />
-          {applicantPhotoSignedUrl && (
-            <div className="flex flex-col gap-2">
-              <span className="text-text-muted">Photo</span>
-              {/* eslint-disable-next-line @next/next/no-img-element -- presigned URL, not optimisable */}
-              <img
-                src={applicantPhotoSignedUrl}
-                alt="Applicant photo"
-                width={168}
-                height={216}
-                className="h-auto w-24 rounded-md border border-border"
-              />
-            </div>
-          )}
         </CardContent>
       </Card>
+
+      {/* EXPAND-ONLY SECTIONS — for fields the Chairman rarely needs but
+          may want to spot-check. Hidden entirely if empty so the
+          accordion doesn't lead to a dead end. <details> is the lowest-
+          cost accessible disclosure — no JS, no Radix dep. */}
+      {(hasHobbies || hasMemberships || hasSocials) && (
+        <Card>
+          <CardHeader>
+            <CardTitle>More details</CardTitle>
+            <CardDescription>Tap a section to expand.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {hasHobbies && (
+              <details className="group rounded-md border border-border bg-surface-card open:bg-surface-page">
+                <summary className="flex cursor-pointer items-center justify-between px-4 py-3 text-sm font-medium text-text-primary marker:hidden [&::-webkit-details-marker]:hidden">
+                  <span>Hobbies &amp; interests</span>
+                  <span className="text-xs text-text-muted group-open:hidden">Show</span>
+                  <span className="hidden text-xs text-text-muted group-open:inline">Hide</span>
+                </summary>
+                <div className="border-t border-border px-4 py-3 text-sm text-text-primary">
+                  <ul className="list-disc pl-5">
+                    {(app.hobbies ?? [])
+                      .filter((h) => h && h.trim().length > 0)
+                      .map((h, i) => (
+                        <li key={`${h}-${i}`}>{h}</li>
+                      ))}
+                  </ul>
+                </div>
+              </details>
+            )}
+
+            {hasMemberships && (
+              <details className="group rounded-md border border-border bg-surface-card open:bg-surface-page">
+                <summary className="flex cursor-pointer items-center justify-between px-4 py-3 text-sm font-medium text-text-primary marker:hidden [&::-webkit-details-marker]:hidden">
+                  <span>Memberships &amp; community ({memberships.length})</span>
+                  <span className="text-xs text-text-muted group-open:hidden">Show</span>
+                  <span className="hidden text-xs text-text-muted group-open:inline">Hide</span>
+                </summary>
+                <div className="flex flex-col gap-3 border-t border-border px-4 py-3 text-sm">
+                  {memberships.map((m) => (
+                    <SummaryRow key={m.label} label={m.label} value={m.value} />
+                  ))}
+                </div>
+              </details>
+            )}
+
+            {hasSocials && (
+              <details className="group rounded-md border border-border bg-surface-card open:bg-surface-page">
+                <summary className="flex cursor-pointer items-center justify-between px-4 py-3 text-sm font-medium text-text-primary marker:hidden [&::-webkit-details-marker]:hidden">
+                  <span>Online presence ({socials.length})</span>
+                  <span className="text-xs text-text-muted group-open:hidden">Show</span>
+                  <span className="hidden text-xs text-text-muted group-open:inline">Hide</span>
+                </summary>
+                <div className="flex flex-col gap-3 border-t border-border px-4 py-3 text-sm">
+                  {socials.map((s) => (
+                    <SummaryRow key={s.label} label={s.label} value={s.value} />
+                  ))}
+                </div>
+              </details>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -249,11 +488,39 @@ export default async function ChairmanSignDetailPage({
   );
 }
 
-function SummaryRow({ label, value }: { label: string; value: string | null | undefined }) {
+function SummaryRow({
+  label,
+  value,
+  wholeRow,
+}: {
+  label: string;
+  value: string | null | undefined;
+  /** Span both columns of the grid (full-width on sm+). */
+  wholeRow?: boolean;
+}) {
   return (
-    <div className="flex flex-col">
-      <span className="text-text-muted">{label}</span>
-      <span className="font-medium text-text-primary">{value || "—"}</span>
+    <div className={`flex flex-col ${wholeRow ? "sm:col-span-2" : ""}`}>
+      <span className="text-xs text-text-muted">{label}</span>
+      <span className="whitespace-pre-line font-medium text-text-primary">
+        {value || "—"}
+      </span>
     </div>
   );
+}
+
+function ageFromDob(dob: string | null): number | null {
+  if (!dob) return null;
+  const d = new Date(dob);
+  if (Number.isNaN(d.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - d.getFullYear();
+  const m = now.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--;
+  return age >= 0 && age < 150 ? age : null;
+}
+
+function formatHousing(type: string | null, rooms: number | null): string | null {
+  if (!type) return null;
+  if (type === "HDB" && rooms != null) return `HDB · ${rooms} rooms`;
+  return type;
 }
