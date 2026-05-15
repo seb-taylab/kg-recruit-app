@@ -1,8 +1,17 @@
 /**
  * Server-only helpers for loading the authenticated profile.
  * Use in server components / server actions / route handlers.
+ *
+ * `getAuthContext` is wrapped in React's request-scoped `cache()` so the
+ * common pattern — dashboard layout calls `getAuthContext()`, the child
+ * page then calls `requireAuth()` — only hits Supabase once per request
+ * (2-3 queries: getUser + profile + optional branch), not twice.
+ *
+ * Cache scope is one server request: a fresh React render tree gets a
+ * fresh cache, so this can't accidentally leak between users.
  */
 import "server-only";
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import type { Branch, Profile } from "@/types/database";
 
@@ -14,7 +23,7 @@ export interface AuthContext {
 }
 
 /** Returns the active profile or null when unauthenticated / deactivated. */
-export async function getAuthContext(): Promise<AuthContext | null> {
+export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
   const supabase = await createClient();
   const {
     data: { user },
@@ -46,7 +55,7 @@ export async function getAuthContext(): Promise<AuthContext | null> {
     profile,
     branch,
   };
-}
+});
 
 /** Throws when there is no auth context. Convenience for server components. */
 export async function requireAuth(): Promise<AuthContext> {
