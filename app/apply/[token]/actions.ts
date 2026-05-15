@@ -219,19 +219,30 @@ function legacyOrgFor(
  */
 export async function uploadPhotoAction(
   rawToken: string,
-  fileBuffer: ArrayBuffer,
-  contentType: string,
+  formData: FormData,
 ): Promise<ActionResult & { previewUrl?: string }> {
   if (!tokenInput.safeParse({ rawToken }).success) return { ok: false, error: "Bad token." };
   const auth = await authorise(rawToken);
   if (!auth.ok) return { ok: false, error: auth.error };
+
+  // FormData carries the file as a multipart-encoded Blob. Bypasses the
+  // React Flight (RSC) payload encoder that ArrayBuffer args would go
+  // through — that encoder has a "Maximum array nesting depth" limit
+  // around the few-MB mark which a phone-camera photo hits regularly.
+  // FormData uses the standard multipart stream + Vercel's body-size
+  // limit (10 MB via next.config.ts). 2026-05-15 fix.
+  const file = formData.get("file");
+  if (!(file instanceof File)) {
+    return { ok: false, error: "No file provided." };
+  }
+  const fileBuffer = await file.arrayBuffer();
 
   // Defensive validation BEFORE forwarding to Cloudinary. 5 MB cap +
   // image/jpeg|png|webp allowlist + magic-byte check. Security audit
   // 2026-05-16 finding H2.
   const validated = validateUpload({
     buffer: fileBuffer,
-    contentType,
+    contentType: file.type,
     maxBytes: 5 * 1024 * 1024,
     allow: ["jpeg", "png", "webp"],
   });
@@ -271,12 +282,21 @@ export async function uploadPhotoAction(
 export async function uploadNricAction(
   rawToken: string,
   side: "front" | "back",
-  fileBuffer: ArrayBuffer,
-  contentType: string,
+  formData: FormData,
 ): Promise<ActionResult> {
   if (!tokenInput.safeParse({ rawToken }).success) return { ok: false, error: "Bad token." };
+  if (side !== "front" && side !== "back") return { ok: false, error: "Invalid side." };
   const auth = await authorise(rawToken);
   if (!auth.ok) return { ok: false, error: auth.error };
+
+  // FormData (multipart) instead of ArrayBuffer arg — see uploadPhotoAction
+  // for the same fix's rationale. NRIC photos from a phone routinely hit
+  // 3-5 MB which RSC's flight encoder can't handle.
+  const file = formData.get("file");
+  if (!(file instanceof File)) {
+    return { ok: false, error: "No file provided." };
+  }
+  const fileBuffer = await file.arrayBuffer();
 
   // Defensive validation: 8 MB cap, image/jpeg|png + application/pdf
   // allowlist, magic-byte check (so a client can't claim image/jpeg
@@ -284,7 +304,7 @@ export async function uploadNricAction(
   // Security audit 2026-05-16 finding H1.
   const validated = validateUpload({
     buffer: fileBuffer,
-    contentType,
+    contentType: file.type,
     maxBytes: 8 * 1024 * 1024,
     allow: ["jpeg", "png", "pdf"],
   });

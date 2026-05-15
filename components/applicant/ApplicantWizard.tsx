@@ -358,8 +358,13 @@ export function ApplicantWizard(props: ApplicantWizardProps) {
   async function handlePhotoUpload(
     blob: Blob,
   ): Promise<{ ok: boolean; previewUrl?: string; error?: string }> {
-    const buf = await blob.arrayBuffer();
-    const result = await uploadPhotoAction(rawToken, buf, "image/jpeg");
+    // FormData (multipart) instead of an ArrayBuffer arg — RSC's flight
+    // encoder chokes on multi-MB binary payloads ("Maximum array nesting
+    // depth"). FormData rides the standard multipart body stream which
+    // Vercel sizes via next.config.ts → serverActions.bodySizeLimit.
+    const fd = new FormData();
+    fd.append("file", new File([blob], "photo.jpg", { type: "image/jpeg" }));
+    const result = await uploadPhotoAction(rawToken, fd);
     if (!result.ok) {
       toast.error(result.error ?? "Couldn't save the photo");
       return { ok: false, error: result.error };
@@ -370,8 +375,11 @@ export function ApplicantWizard(props: ApplicantWizardProps) {
   }
 
   async function handleNricUpload(side: "front" | "back", file: File) {
-    const buf = await file.arrayBuffer();
-    const result = await uploadNricAction(rawToken, side, buf, file.type);
+    // Same FormData rationale as handlePhotoUpload above. NRIC scans
+    // from phone cameras are 3-5 MB regularly.
+    const fd = new FormData();
+    fd.append("file", file);
+    const result = await uploadNricAction(rawToken, side, fd);
     if (!result.ok) {
       toast.error(result.error ?? "Couldn't save the scan");
       throw new Error(result.error);
