@@ -24,8 +24,16 @@ export default function PrivacyPage() {
             applicable, NRIC number, date and place of birth, race, gender, marital status.
           </li>
           <li>
-            <strong>Contact:</strong> home address, postal code, telephone numbers (home, office,
-            mobile), email, social media handles.
+            <strong>Contact:</strong> home address (postal code, block, street, building, unit
+            number), telephone numbers (home, office, mobile), email, social media handles.
+          </li>
+          <li>
+            <strong>Address coordinates:</strong> when you enter your postal code, we look up the
+            corresponding street address via the Singapore Land Authority&rsquo;s OneMap service.
+            This returns approximate latitude / longitude for your block which we store alongside
+            the address. We use the coordinates only to tag your application with the correct
+            electoral constituency (GRC/SMC) for branch reporting. They are never published or
+            shared outside the parties listed in section 3.
           </li>
           <li>
             <strong>Background:</strong> housing type, highest education, written and spoken

@@ -18,6 +18,17 @@ const NRIC_REGEX = /^[STFG]\d{7}[A-Z]$/;
 const SG_POSTAL = /^\d{6}$/;
 const PHONE_REGEX = /^\+?[0-9 ]{8,15}$/;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+// SG unit numbers: #FLOOR-UNIT, e.g. #08-123 or #15-04A. Trailing letter
+// (HDB stack suffix) is optional. Two-letter suffixes exist but are rare;
+// applicants in that situation can fall back to entering it as part of
+// block_number / building_name in manual mode.
+const SG_UNIT_REGEX = /^#\d{1,3}-\d{1,4}[A-Z]?$/;
+// Singapore bounding box for the OneMap-returned coords. Mirrors the DB
+// CHECK constraint in migrations/20260516000001_structured_address.sql.
+const SG_LAT_MIN = 1.0;
+const SG_LAT_MAX = 1.6;
+const SG_LNG_MIN = 103.4;
+const SG_LNG_MAX = 104.2;
 
 const minYears = (years: number) =>
   (val: string) => {
@@ -73,11 +84,52 @@ export const applicantPage1Schema = z.object({
   surname: z.string().min(1, "This field is required").max(40, "Surname is too long"),
   given_names: z.string().min(1, "This field is required").max(60, "Given names are too long"),
   chinese_name: optionalString(30),
-  home_address: z.string().min(1, "This field is required").max(200, "Address is too long"),
+  // ─── Address (postal-code-first; see migrations/20260516000001) ──────
+  // The applicant types postal_code → OneMap autofills block/street/
+  // building → applicant types unit_number. The free-text home_address
+  // is derived server-side from these structured fields at submit time
+  // so the PDF renderer + the application-detail page (which read
+  // home_address) keep working unchanged. home_address therefore stays
+  // optional in this schema; the submit handler is authoritative.
   postal_code: z
     .string()
     .min(1, "This field is required")
-    .regex(SG_POSTAL, "6-digit postal code"),
+    .regex(SG_POSTAL, "6-digit Singapore postal code"),
+  block_number: z
+    .string()
+    .min(1, "Block / house number is required")
+    .max(20, "Block number is too long"),
+  street_name: z.string().min(1, "Street is required").max(120, "Street is too long"),
+  building_name: optionalString(120),
+  // Unit is conditionally-required: blank is fine for landed property,
+  // but everyone else must fill it. Cross-field check in applicantFullSchema.
+  unit_number: z
+    .string()
+    .max(15, "Unit is too long")
+    .nullable()
+    .optional()
+    .transform((v) => (v === null || v === "" ? undefined : v))
+    .refine(
+      (v) => v === undefined || SG_UNIT_REGEX.test(v),
+      "Format: #FLOOR-UNIT, e.g. #08-123 or #15-04A",
+    ),
+  latitude: z
+    .number()
+    .min(SG_LAT_MIN, "Coordinates out of Singapore range")
+    .max(SG_LAT_MAX, "Coordinates out of Singapore range")
+    .nullable()
+    .optional()
+    .transform((v) => (v === null ? undefined : v)),
+  longitude: z
+    .number()
+    .min(SG_LNG_MIN, "Coordinates out of Singapore range")
+    .max(SG_LNG_MAX, "Coordinates out of Singapore range")
+    .nullable()
+    .optional()
+    .transform((v) => (v === null ? undefined : v)),
+  // Kept for back-compat — populated server-side from the structured
+  // fields above. Applicants can't type it directly any more.
+  home_address: optionalString(200),
   housing_type: z.enum(FORM_TICK_VALUES.housing, {
     message: "Pick one",
   }),
@@ -153,7 +205,14 @@ export const applicantPage2Schema = z.object({
     .refine((v) => v === true, "You must agree before submitting"),
 });
 
-/** Cross-page rule: HDB rooms required when housing_type = 'HDB'. */
+/**
+ * Cross-page rules:
+ *   - HDB rooms required when housing_type = 'HDB'.
+ *   - Unit number required unless housing_type = 'Landed' (no unit for
+ *     landed properties). This is the new postal-code-first invariant —
+ *     spec says "Unit number is required for apartments." The wizard
+ *     surfaces this error on the unit field, not the housing radio.
+ */
 export const applicantFullSchema = applicantPage1Schema
   .merge(applicantPage2Schema)
   .superRefine((data, ctx) => {
@@ -162,6 +221,14 @@ export const applicantFullSchema = applicantPage1Schema
         code: z.ZodIssueCode.custom,
         path: ["hdb_rooms"],
         message: "Number of rooms required for HDB",
+      });
+    }
+    if (data.housing_type !== "Landed" && !data.unit_number) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["unit_number"],
+        message:
+          "Unit number is required for apartments. Pick 'Landed' below if you don't have one.",
       });
     }
   });

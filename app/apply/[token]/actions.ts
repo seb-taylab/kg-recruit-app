@@ -49,12 +49,39 @@ export async function saveDraftPage1Action(
   }
 
   const admin = createAdminClient();
+
+  // Derive the legacy `home_address` flat string from the new structured
+  // fields whenever any address column changes. This keeps the PDF renderer
+  // (which reads home_address into its dedicated coordinate) + the
+  // application-detail / sign pages (which display home_address) working
+  // unchanged. We always overwrite home_address here so a manual-edit
+  // applicant can't desync the two representations. Postal code goes into
+  // its OWN dedicated PDF slot, so we deliberately omit it from this
+  // string per Sebastian's Option B decision (2026-05-16).
+  const addressChanged =
+    parsed.data.block_number !== undefined ||
+    parsed.data.street_name !== undefined ||
+    parsed.data.building_name !== undefined ||
+    parsed.data.unit_number !== undefined;
+  const derivedHomeAddress = addressChanged
+    ? buildHomeAddress({
+        block_number: parsed.data.block_number ?? undefined,
+        street_name: parsed.data.street_name ?? undefined,
+        building_name: parsed.data.building_name ?? undefined,
+        unit_number: parsed.data.unit_number ?? undefined,
+      })
+    : undefined;
+
   const update = {
     ...parsed.data,
     // Maintain the denormalised `name` column from surname + given_names.
     ...(parsed.data.surname && parsed.data.given_names
       ? { name: `${parsed.data.surname.toUpperCase()} ${parsed.data.given_names}` }
       : {}),
+    // Only write home_address when one of its source fields actually
+    // landed in this update — avoids stomping a previously-saved value
+    // during partial autosaves that don't touch the address block.
+    ...(derivedHomeAddress !== undefined ? { home_address: derivedHomeAddress } : {}),
   };
   const { error } = await admin
     .from("applications" as never)
@@ -63,6 +90,41 @@ export async function saveDraftPage1Action(
   if (error) return { ok: false, error: "Couldn't save — try again in a minute." };
   revalidatePath(`/apply/${rawToken}`);
   return { ok: true };
+}
+
+/**
+ * Compose the legacy flat `home_address` string from the structured
+ * address columns. Postal code is intentionally omitted — it occupies its
+ * own dedicated slot on the PDF (formCoordinates.page1.postalCode).
+ *
+ *   "Blk 102, Rivervale Walk, Rivervale Pride, #08-123"
+ *   "12 Sentosa Cove" (landed — no building, no unit)
+ */
+function buildHomeAddress(parts: {
+  block_number?: string;
+  street_name?: string;
+  building_name?: string;
+  unit_number?: string;
+}): string {
+  const block = parts.block_number?.trim();
+  const street = parts.street_name?.trim();
+  const building = parts.building_name?.trim();
+  const unit = parts.unit_number?.trim();
+
+  const segments: string[] = [];
+  if (block && street) {
+    // HDB convention: "Blk 102" if the block is purely numeric; otherwise
+    // just the block as the applicant typed it (some landed houses use
+    // a non-numeric house number).
+    segments.push(/^\d+[A-Z]?$/.test(block) ? `Blk ${block} ${street}` : `${block} ${street}`);
+  } else if (street) {
+    segments.push(street);
+  } else if (block) {
+    segments.push(block);
+  }
+  if (building) segments.push(building);
+  if (unit) segments.push(unit);
+  return segments.join(", ");
 }
 
 export async function saveDraftPage2Action(

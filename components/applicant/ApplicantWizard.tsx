@@ -2,7 +2,7 @@
  * @tier organism
  * @design-spec KG_DesignSystem_v1.md §3 (FormWizard pattern, mobile-first)
  * @brand-spec KG_BrandExecution_PAP.md §3.2 (page titles), §3.3 (form labels), §3.5 (errors)
- * @consumes ui/Card, ui/Button, ui/Progress, ui/Input, ui/Label, ui/RadioGroup, ui/Checkbox, ui/Textarea, ui/Select, ui/Alert, applicant/PhotoStep, applicant/NricStep, applicant/MobileFormShell
+ * @consumes ui/Card, ui/Button, ui/Progress, ui/Input, ui/Label, ui/RadioGroup, ui/Checkbox, ui/Select, ui/Alert, applicant/PhotoStep, applicant/NricStep, applicant/MobileFormShell, applicant/AddressFields
  * @used-by app/apply/[token]/page.tsx
  *
  * Custom composition justification: shadcn ships primitives but no
@@ -21,7 +21,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
@@ -52,6 +51,7 @@ import { MobileFormShell } from "./MobileFormShell";
 import { PhotoStep } from "./PhotoStep";
 import { NricStep } from "./NricStep";
 import { SignaturePad } from "./SignaturePad";
+import { AddressFields } from "./AddressFields";
 
 type WizardStep = "page1" | "page2" | "photo" | "nric" | "sign";
 
@@ -66,8 +66,13 @@ const FIELD_LABELS: Record<string, string> = {
   surname: "Surname",
   given_names: "Given names",
   chinese_name: "Chinese characters",
-  home_address: "Home address",
   postal_code: "Postal code",
+  block_number: "Block / house number",
+  street_name: "Street",
+  building_name: "Building",
+  unit_number: "Unit number",
+  // Kept for legacy / server-derived display surface — not user-typed.
+  home_address: "Home address",
   housing_type: "Type of housing",
   hdb_rooms: "HDB rooms",
   date_of_birth: "Date of birth",
@@ -105,8 +110,16 @@ const PAGE1_FIELDS = new Set([
   "surname",
   "given_names",
   "chinese_name",
-  "home_address",
+  // Structured address (postal-code-first redesign)
   "postal_code",
+  "block_number",
+  "street_name",
+  "building_name",
+  "unit_number",
+  "latitude",
+  "longitude",
+  // Server-derived flat string, kept in scope for legacy callers
+  "home_address",
   "housing_type",
   "hdb_rooms",
   "date_of_birth",
@@ -151,8 +164,17 @@ export interface ApplicantDraft {
   surname: string | null;
   given_names: string | null;
   chinese_name: string | null;
-  home_address: string | null;
+  // Structured address (PR-1 postal-code-first redesign). home_address is
+  // server-derived from these; we still keep it on the draft shape for
+  // back-compat with downstream readers (PDF render, detail pages).
   postal_code: string | null;
+  block_number: string | null;
+  street_name: string | null;
+  building_name: string | null;
+  unit_number: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  home_address: string | null;
   housing_type: string | null;
   hdb_rooms: number | null;
   date_of_birth: string | null;
@@ -211,8 +233,14 @@ export function ApplicantWizard(props: ApplicantWizardProps) {
       surname: defaultValues.surname ?? "",
       given_names: defaultValues.given_names ?? "",
       chinese_name: defaultValues.chinese_name ?? undefined,
-      home_address: defaultValues.home_address ?? "",
       postal_code: defaultValues.postal_code ?? "",
+      block_number: defaultValues.block_number ?? "",
+      street_name: defaultValues.street_name ?? "",
+      building_name: defaultValues.building_name ?? undefined,
+      unit_number: defaultValues.unit_number ?? undefined,
+      latitude: defaultValues.latitude ?? undefined,
+      longitude: defaultValues.longitude ?? undefined,
+      home_address: defaultValues.home_address ?? undefined,
       housing_type: (defaultValues.housing_type as ApplicantPage1["housing_type"]) ?? undefined,
       hdb_rooms: defaultValues.hdb_rooms ?? undefined,
       date_of_birth: defaultValues.date_of_birth ?? "",
@@ -436,25 +464,12 @@ export function ApplicantWizard(props: ApplicantWizardProps) {
                 >
                   <Input id="chinese_name" {...page1Form.register("chinese_name")} />
                 </Field>
-                <Field
-                  id="home_address"
-                  label="Home address"
-                  error={page1Form.formState.errors.home_address?.message}
-                >
-                  <Textarea id="home_address" rows={2} {...page1Form.register("home_address")} />
-                </Field>
-                <Field
-                  id="postal_code"
-                  label="Postal code"
-                  helper="6-digit Singapore postal code"
-                  error={page1Form.formState.errors.postal_code?.message}
-                >
-                  <Input
-                    id="postal_code"
-                    inputMode="numeric"
-                    {...page1Form.register("postal_code")}
-                  />
-                </Field>
+                {/* Postal-code-first address capture. Replaces the old
+                    free-text home_address + postal_code inputs. The unit
+                    field hides when the housing-type radio below is set
+                    to "Landed". See components/applicant/AddressFields.tsx
+                    + migrations/20260516000001_structured_address.sql. */}
+                <AddressFields form={page1Form} isLanded={housingType === "Landed"} />
                 <Field
                   id="housing_type"
                   label="Housing type"
