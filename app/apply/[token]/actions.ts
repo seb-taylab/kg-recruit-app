@@ -294,10 +294,14 @@ export async function submitApplicantSignatureAction(
   const branchId = auth.verify.magicLink.branch_id;
 
   // Re-load the saved row and validate the FULL applicant schema.
+  // Structured-address columns + lat/lng need to come back so the
+  // schema's unit-required-unless-Landed rule has the data to check,
+  // and so constituency derivation has lat/lng to point-in-polygon
+  // against. See migrations/20260516000001_structured_address.sql.
   const { data: row } = await admin
     .from("applications" as never)
     .select(
-      "surname, given_names, nric_no, chinese_name, home_address, postal_code, housing_type, hdb_rooms, date_of_birth, place_of_birth, race, gender, marital_status, tel_home, tel_office, tel_hp, highest_edu, written_languages, spoken_languages, facebook, linkedin, twitter, blog, email, occupation, organisation, monthly_income, hobbies, trade_unions, associations, clubs, ccc, ccmc, rnc, grassroots, applicant_photo_url, consent_pdpa",
+      "surname, given_names, nric_no, chinese_name, home_address, postal_code, block_number, street_name, building_name, unit_number, latitude, longitude, housing_type, hdb_rooms, date_of_birth, place_of_birth, race, gender, marital_status, tel_home, tel_office, tel_hp, highest_edu, written_languages, spoken_languages, facebook, linkedin, twitter, blog, email, occupation, organisation, monthly_income, hobbies, trade_unions, associations, clubs, ccc, ccmc, rnc, grassroots, applicant_photo_url, consent_pdpa",
     )
     .eq("id", appId)
     .single();
@@ -371,6 +375,42 @@ export async function submitApplicantSignatureAction(
     .eq("id", auth.verify.magicLink.id)
     .is("consumed_at", null);
 
+  // Derive the electoral constituency (GRC / SMC) from the applicant's
+  // lat/lng. Cache-first; on cache miss does a point-in-polygon test
+  // against the vendored ELD GeoJSON. Submission_* are FROZEN at this
+  // moment per Sebastian's 2026-05-16 decision card — current_* are
+  // populated identically here and updated later by boundary-refresh
+  // jobs. Failure to derive (missing lat/lng, off-the-map coords) does
+  // NOT block the signature — the row just goes through with NULL
+  // constituency, which the reporting query treats as "unknown".
+  let submissionConstituency: string | null = null;
+  let submissionConstituencyType: "GRC" | "SMC" | null = null;
+  let constituencyBoundaryVersion: string | null = null;
+  if (data.latitude != null && data.longitude != null && data.postal_code) {
+    try {
+      const { deriveConstituency, BOUNDARY_VERSION } = await import(
+        "@/lib/sg/constituency"
+      );
+      const result = await deriveConstituency(
+        data.postal_code,
+        data.latitude,
+        data.longitude,
+      );
+      if (result) {
+        submissionConstituency = result.full_name;
+        submissionConstituencyType = result.type;
+        constituencyBoundaryVersion = BOUNDARY_VERSION;
+      }
+    } catch (err) {
+      // Don't surface to the applicant — they shouldn't be blocked from
+      // signing because our geo-tagging hit an issue. Log + move on.
+      console.warn(
+        "[constituency] derivation failed for application " + appId,
+        err,
+      );
+    }
+  }
+
   // Status transition: APPLICANT_FILLING → PENDING_REFERRAL_ASSIGNMENT.
   // We pass through SIGNED_BY_APPLICANT in the event log but the row
   // skips straight to the next admin-actionable state.
@@ -379,6 +419,17 @@ export async function submitApplicantSignatureAction(
     .update({
       applicant_signed_at: now,
       status: "PENDING_REFERRAL_ASSIGNMENT",
+      // Constituency stamping. submission_* + current_* land identically
+      // here; only current_* mutates on future boundary refreshes.
+      ...(submissionConstituency && submissionConstituencyType
+        ? {
+            submission_constituency: submissionConstituency,
+            submission_constituency_type: submissionConstituencyType,
+            current_constituency: submissionConstituency,
+            current_constituency_type: submissionConstituencyType,
+            constituency_boundary_version: constituencyBoundaryVersion,
+          }
+        : {}),
     } as never)
     .eq("id", appId);
 
