@@ -30,3 +30,27 @@
     }
   }
 }
+
+/* Mobile safe-area helpers. env(safe-area-inset-*) is a per-device runtime
+   CSS value (iPhone home-indicator height, notch insets, etc.) — it isn't
+   a design constant so it can't live in tokens.json. These utilities are
+   the project's allowed-list way to access it without tripping the
+   Tailwind-arbitrary-value gate in scripts/validate-tokens.ts. */
+@layer utilities {
+  /* Just the device-reported bottom inset. */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom); /* tokens-ok */
+  }
+  /* Used on the dashboard <main> on mobile so content clears the 64px
+     MobileBottomNav (h-16) + safe-area + 1rem breathing gap. Override on
+     desktop with `lg:pb-6` since the sidebar layout has no bottom nav. */
+  .pb-mobile-nav {
+    padding-bottom: calc(4rem + env(safe-area-inset-bottom) + 1rem); /* tokens-ok */
+  }
+  /* Used inside SheetContent[side=bottom] so the home-indicator never
+     covers the bottom-most form field / button. 1.5rem matches the
+     base Sheet padding (p-6). */
+  .pb-sheet {
+    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom)); /* tokens-ok */
+  }
+}
