@@ -150,7 +150,7 @@ export function CaptureForm({ eventSlug, eventName, branchName, consentText }: C
             value={values.postal_code}
             onChange={(e) => set("postal_code", e.target.value)}
             maxLength={6}
-            placeholder="540102"
+            placeholder="123456"
             required
           />
           <p className="text-xs text-text-muted">
