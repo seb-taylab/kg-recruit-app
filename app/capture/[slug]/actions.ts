@@ -35,6 +35,11 @@ const SG_POSTAL = /^\d{6}$/;
 const NRIC_LAST_4 = /^\d{3}[A-Z]$/i;
 const PHONE = /^\+?[0-9 ]{8,20}$/;
 
+// Capture v2 (2026-05-18): full_name, mobile, residential postal_code,
+// nric_last_4, and email are ALL required. Previously postal + email were
+// optional; Sebastian tightened the contract because (a) postal is the
+// routing key wing uses to suggest a branch, and (b) email + mobile give
+// the branch two contact channels rather than relying on phone alone.
 const captureSchema = z.object({
   eventSlug: z.string().min(1).max(50),
   full_name: z
@@ -49,10 +54,7 @@ const captureSchema = z.object({
   postal_code: z
     .string()
     .trim()
-    .optional()
-    .or(z.literal(""))
-    .transform((v) => (v && v.length > 0 ? v : undefined))
-    .refine((v) => v === undefined || SG_POSTAL.test(v), "6-digit Singapore postal code"),
+    .regex(SG_POSTAL, "6-digit Singapore residential postal code"),
   nric_last_4: z
     .string()
     .trim()
@@ -61,13 +63,9 @@ const captureSchema = z.object({
   email: z
     .string()
     .trim()
-    .optional()
-    .or(z.literal(""))
-    .transform((v) => (v && v.length > 0 ? v : undefined))
-    .refine(
-      (v) => v === undefined || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v),
-      "That doesn't look like an email",
-    ),
+    .min(1, "Email is required")
+    .email("That doesn't look like an email")
+    .max(120, "Email is too long"),
   consent_pdpa: z.boolean(),
 });
 
@@ -132,9 +130,11 @@ export async function captureLeadAction(
       wing_branch_id: auth.branch.id,
       full_name: data.full_name,
       mobile_number: data.mobile_number,
-      postal_code: data.postal_code ?? null,
+      // postal_code + email are now required (v2 capture). Validation in
+      // captureSchema above guarantees they're populated strings here.
+      postal_code: data.postal_code,
       nric_last_4: data.nric_last_4,
-      email: data.email ?? null,
+      email: data.email,
       consent_pdpa: true,
       consent_text_version: CAPTURE_CONSENT_VERSION,
       captured_by_user_id: auth.userId,
@@ -163,8 +163,9 @@ export async function captureLeadAction(
       event_slug: data.eventSlug,
       lead_id: row.id,
       consent_version: CAPTURE_CONSENT_VERSION,
-      has_postal: data.postal_code !== undefined,
-      has_email: data.email !== undefined,
+      // has_postal / has_email dropped — both required as of v2 capture
+      // so the flags would always be true. Use consent_version to tell
+      // v1 vs v2 leads apart.
     },
   });
 

@@ -141,7 +141,7 @@ export function CaptureForm({ eventSlug, eventName, branchName, consentText }: C
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-2">
-          <Label htmlFor="cap-postal">Postal code (optional)</Label>
+          <Label htmlFor="cap-postal">Residential postal code</Label>
           <Input
             id="cap-postal"
             className="h-12 text-base"
@@ -151,7 +151,11 @@ export function CaptureForm({ eventSlug, eventName, branchName, consentText }: C
             onChange={(e) => set("postal_code", e.target.value)}
             maxLength={6}
             placeholder="540102"
+            required
           />
+          <p className="text-xs text-text-muted">
+            Where you live — not your work address.
+          </p>
           {errors?.postal_code && (
             <p className="text-sm text-state-error">{errors.postal_code}</p>
           )}
@@ -176,7 +180,7 @@ export function CaptureForm({ eventSlug, eventName, branchName, consentText }: C
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="cap-email">Email (optional)</Label>
+        <Label htmlFor="cap-email">Email</Label>
         <Input
           id="cap-email"
           className="h-12 text-base"
@@ -185,6 +189,7 @@ export function CaptureForm({ eventSlug, eventName, branchName, consentText }: C
           value={values.email}
           onChange={(e) => set("email", e.target.value)}
           autoComplete="email"
+          required
         />
         {errors?.email && (
           <p className="text-sm text-state-error">{errors.email}</p>
