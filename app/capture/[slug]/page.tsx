@@ -93,10 +93,11 @@ export default async function CapturePage({ params }: PageProps) {
       </Card>
 
       <p className="mt-4 text-center text-xs text-text-muted">
-        Captured by{" "}
-        <strong className="text-text-secondary">
-          {auth.profile.full_name ?? auth.email ?? "you"}
-        </strong>{" "}
+        {/* Institutional attribution — the attendee sees the wing name,
+            not the booth admin's personal name. The admin's user_id is
+            still recorded in leads.captured_by_user_id for audit, just
+            not surfaced to the attendee. */}
+        <strong className="text-text-secondary">{branchName}</strong>{" "}
         · consent {CAPTURE_CONSENT_VERSION}
       </p>
     </main>
