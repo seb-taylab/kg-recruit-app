@@ -86,7 +86,15 @@ export type AuditAction =
   | "PASSWORD_RESET_TRIGGERED"
   | "SETTINGS_CHANGED"
   | "NUDGE_SENT"
-  | "TAYLAB_VIEW";
+  | "TAYLAB_VIEW"
+  // Wing / events / leads (v4.1 lead routing, Sprint 2+)
+  | "EVENT_CREATED"
+  | "EVENT_TOGGLED"
+  | "LEAD_CAPTURED"
+  | "LEAD_ROUTED"
+  | "LEAD_ENGAGED"
+  | "LEAD_CONVERTED"
+  | "LEAD_ARCHIVED";
 
 export interface AuditEntry {
   action: AuditAction;

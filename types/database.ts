@@ -79,6 +79,47 @@ export interface Event {
   created_by_id: string | null;
 }
 
+/**
+ * Leads — captured at booth, routed by wing, converted to applications.
+ * Added in 20260517000002_leads_capture.sql. Status enum is 7-stage:
+ * CAPTURED → ROUTED → ENGAGED → CONVERTED (success path), or
+ * STALLED → COLD → ARCHIVED (non-success).
+ */
+export type LeadStatus =
+  | "CAPTURED"
+  | "ROUTED"
+  | "ENGAGED"
+  | "CONVERTED"
+  | "STALLED"
+  | "COLD"
+  | "ARCHIVED";
+
+export interface Lead {
+  id: string;
+  event_id: string;
+  wing_branch_id: string;
+  full_name: string;
+  mobile_number: string;
+  postal_code: string | null;
+  nric_last_4: string;
+  email: string | null;
+  consent_pdpa: boolean;
+  consent_text_version: string;
+  captured_by_user_id: string | null;
+  captured_at: string;
+  ip_address: string | null;
+  user_agent: string | null;
+  status: LeadStatus;
+  routed_to_branch_id: string | null;
+  routed_at: string | null;
+  routed_by_user_id: string | null;
+  converted_to_application_id: string | null;
+  converted_at: string | null;
+  archived_at: string | null;
+  archived_by_user_id: string | null;
+  archive_reason: string | null;
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -98,6 +139,19 @@ export interface Database {
         Row: Event;
         Insert: Partial<Event> & { branch_id: string; name: string; slug: string };
         Update: Partial<Event>;
+        Relationships: [];
+      };
+      leads: {
+        Row: Lead;
+        Insert: Partial<Lead> & {
+          event_id: string;
+          wing_branch_id: string;
+          full_name: string;
+          mobile_number: string;
+          nric_last_4: string;
+          consent_text_version: string;
+        };
+        Update: Partial<Lead>;
         Relationships: [];
       };
       applications: {
