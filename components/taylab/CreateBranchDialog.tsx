@@ -26,11 +26,32 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { createBranchAction } from "@/app/(dashboard)/taylab/branches/actions";
 
 type BranchTypeOption = "territorial" | "wing";
 
-export function CreateBranchDialog() {
+interface ConstituencyChoice {
+  constituency: string;
+  constituency_type: "GRC" | "SMC";
+  district: string | null;
+}
+
+interface CreateBranchDialogProps {
+  /** Directory rows loaded server-side so the territorial branch picker
+   *  forces a canonical constituency name from constituency_directory.
+   *  Prevents the "Kampong Glam" (neighbourhood) vs "JALAN BESAR GRC"
+   *  (canonical) mismatch we hit on the seed branch. */
+  constituencies: ConstituencyChoice[];
+}
+
+export function CreateBranchDialog({ constituencies }: CreateBranchDialogProps) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [branchType, setBranchType] = React.useState<BranchTypeOption>("territorial");
@@ -160,13 +181,23 @@ export function CreateBranchDialog() {
           </div>
           {!isWing && (
             <div className="flex flex-col gap-2">
-              <Label htmlFor="b-constituency">Constituency (optional)</Label>
-              <Input
-                id="b-constituency"
-                value={constituency}
-                onChange={(e) => setConstituency(e.target.value)}
-                autoComplete="off"
-              />
+              <Label htmlFor="b-constituency">Constituency</Label>
+              <Select value={constituency} onValueChange={setConstituency}>
+                <SelectTrigger id="b-constituency">
+                  <SelectValue placeholder="Pick a constituency…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {constituencies.map((c) => (
+                    <SelectItem key={c.constituency} value={c.constituency}>
+                      {c.constituency}
+                      {c.district ? ` · ${c.district} District` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-text-muted">
+                Source: constituency directory ({constituencies.length} entries).
+              </p>
             </div>
           )}
           <div className="flex flex-col gap-2">

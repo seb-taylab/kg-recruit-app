@@ -49,6 +49,21 @@ export default async function TaylabBranchesPage() {
     branches.filter((b) => b.branch_type === "territorial").map((b) => b.constituency),
   );
 
+  // Constituency directory for the create-branch dialog. Forces taylab to
+  // pick a canonical constituency name (prevents the "Kampong Glam"
+  // neighbourhood vs "JALAN BESAR GRC" canonical mismatch the seed
+  // branch hit).
+  const { data: directoryRows } = await admin
+    .from("constituency_directory" as never)
+    .select("constituency, constituency_type, district")
+    .order("constituency");
+  const constituencyChoices =
+    (directoryRows as Array<{
+      constituency: string;
+      constituency_type: "GRC" | "SMC";
+      district: string | null;
+    }> | null) ?? [];
+
   return (
     <div className="flex flex-col gap-6">
       <header className="flex items-end justify-between gap-4">
@@ -59,7 +74,7 @@ export default async function TaylabBranchesPage() {
             invite the first Master Admin in one go.
           </p>
         </div>
-        <CreateBranchDialog />
+        <CreateBranchDialog constituencies={constituencyChoices} />
       </header>
 
       {branches.length === 0 ? (
