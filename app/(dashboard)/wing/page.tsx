@@ -1,15 +1,13 @@
 /**
- * Wing workspace — Overview (placeholder).
+ * Wing workspace — Overview.
  *
- * Sprint 1 of v4.1 ships ONLY the route + role gating. The actual Triage
- * view (Hot/Warm/Cool/Cold lead lists, reroute mechanics) lands in
- * Sprint 2 once the leads table exists. Events list lands in Sprint 3.
- *
- * For now: confirms a wing_admin / wing_chairman can log in, lands here,
- * sees nav items pointing to /wing/triage + /wing/events, and gets a
- * clear "next step" message.
+ * Real content (Sprint 4): live lead funnel + per-event breakdown +
+ * per-branch conversion summary. All driven by the leads table; no
+ * placeholder copy.
  */
+import Link from "next/link";
 import { redirect } from "next/navigation";
+import { formatDistanceToNow } from "date-fns";
 import {
   Card,
   CardContent,
@@ -17,97 +15,289 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { requireAuth } from "@/lib/auth/get-user";
-import { isWingRole } from "@/types/database";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { isWingRole, type LeadStatus } from "@/types/database";
+
+interface LeadRow {
+  id: string;
+  status: LeadStatus;
+  captured_at: string;
+  routed_to_branch_id: string | null;
+  event_id: string;
+  full_name: string;
+}
+
+interface EventRow {
+  id: string;
+  name: string;
+  is_active: boolean;
+}
+
+interface BranchRow {
+  id: string;
+  name: string;
+}
 
 export default async function WingOverviewPage() {
   const auth = await requireAuth();
 
-  // Only wing roles land here. taylab_staff bounces to /taylab; everyone
-  // else bounces to /branch. This mirrors the gating pattern in the
-  // existing taylab/* and branch/* pages.
-  if (!isWingRole(auth.profile.role)) {
-    if (auth.profile.role === "taylab_staff") redirect("/taylab");
+  if (!isWingRole(auth.activeProfile.role)) {
+    if (auth.activeProfile.role === "taylab_staff") redirect("/taylab");
     redirect("/branch");
   }
+  if (!auth.activeBranch || auth.activeBranch.branch_type !== "wing") {
+    redirect("/select-workspace");
+  }
+
+  const admin = createAdminClient();
+
+  // Pull everything we need in three queries. Volumes are small (wing-scoped).
+  const [{ data: leadRows }, { data: eventRows }, { data: branchRows }] = await Promise.all([
+    admin
+      .from("leads" as never)
+      .select("id, status, captured_at, routed_to_branch_id, event_id, full_name")
+      .eq("wing_branch_id", auth.activeBranch.id)
+      .order("captured_at", { ascending: false }),
+    admin
+      .from("events" as never)
+      .select("id, name, is_active")
+      .eq("branch_id", auth.activeBranch.id),
+    admin
+      .from("branches" as never)
+      .select("id, name")
+      .eq("branch_type", "territorial"),
+  ]);
+
+  const leads = (leadRows as LeadRow[] | null) ?? [];
+  const events = (eventRows as EventRow[] | null) ?? [];
+  const branches = (branchRows as BranchRow[] | null) ?? [];
+  const branchById = new Map(branches.map((b) => [b.id, b.name]));
+  const eventById = new Map(events.map((e) => [e.id, e]));
+
+  // Funnel counts. Order intentional — left-to-right pipeline.
+  const counts = {
+    captured: leads.filter((l) => l.status === "CAPTURED").length,
+    routed: leads.filter((l) => l.status === "ROUTED").length,
+    engaged: leads.filter((l) => l.status === "ENGAGED").length,
+    converted: leads.filter((l) => l.status === "CONVERTED").length,
+    stalled: leads.filter((l) => l.status === "STALLED").length,
+    cold: leads.filter((l) => l.status === "COLD").length,
+    archived: leads.filter((l) => l.status === "ARCHIVED").length,
+  };
+  const total = leads.length;
+  const conversionRate = total > 0 ? Math.round((counts.converted / total) * 100) : 0;
+
+  // Per-event breakdown (count by status). Limit to events with ≥1 lead so
+  // empty events don't clutter the overview.
+  const perEvent = events
+    .map((ev) => {
+      const evLeads = leads.filter((l) => l.event_id === ev.id);
+      return {
+        event: ev,
+        total: evLeads.length,
+        converted: evLeads.filter((l) => l.status === "CONVERTED").length,
+        routed: evLeads.filter((l) =>
+          ["ROUTED", "ENGAGED"].includes(l.status),
+        ).length,
+        captured: evLeads.filter((l) => l.status === "CAPTURED").length,
+      };
+    })
+    .filter((row) => row.total > 0)
+    .sort((a, b) => b.total - a.total);
+
+  // Per-branch conversion summary (only branches that have received leads).
+  const perBranch = new Map<
+    string,
+    { branchId: string; branchName: string; routed: number; converted: number }
+  >();
+  for (const lead of leads) {
+    if (!lead.routed_to_branch_id) continue;
+    const key = lead.routed_to_branch_id;
+    const bucket =
+      perBranch.get(key) ??
+      {
+        branchId: key,
+        branchName: branchById.get(key) ?? "(unknown)",
+        routed: 0,
+        converted: 0,
+      };
+    bucket.routed += 1;
+    if (lead.status === "CONVERTED") bucket.converted += 1;
+    perBranch.set(key, bucket);
+  }
+  const branchSummary = Array.from(perBranch.values()).sort((a, b) => b.routed - a.routed);
+
+  // Most recent 5 leads — a tiny activity feed.
+  const recent = leads.slice(0, 5);
 
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold leading-tight text-text-primary">
-          {auth.branch?.name ?? "Wing"} — Overview
+          {auth.activeBranch.name} — Overview
         </h1>
         <p className="text-text-secondary">
-          Your wing workspace. Triage is where you&rsquo;ll act on inbound leads
-          from events; Events is where you set up new capture flows.
+          {total === 0
+            ? "No leads captured yet. Create an event and start capturing."
+            : `${total} total leads · ${conversionRate}% converted to applications.`}
         </p>
       </header>
 
-      <Alert variant="info">
-        <AlertTitle>Wing workspace — Sprint 1 of 3</AlertTitle>
-        <AlertDescription>
-          The wing branch primitive is live. Triage view (lead routing,
-          reroute mechanics) and Events list ship in the next two sprints
-          ahead of YP40. Sidebar nav points at the routes so you can verify
-          your role + branch are correctly provisioned.
-        </AlertDescription>
-      </Alert>
+      {total === 0 && (
+        <Alert variant="info">
+          <AlertDescription>
+            Head to <Link href="/wing/events" className="font-medium underline">Events</Link> to set up
+            your first capture flow. Once leads arrive, this page comes alive.
+          </AlertDescription>
+        </Alert>
+      )}
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Triage</CardTitle>
-            <CardDescription>
-              Hot / Warm / Cool / Cold lead lists with one-click reroute. Ships in
-              Sprint 2 (target: end of next week).
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="text-sm text-text-muted">
-            Not yet available.
-          </CardContent>
-        </Card>
+      {/* Funnel */}
+      <section>
+        <h2 className="text-lg font-semibold text-text-primary mb-3">Funnel</h2>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <FunnelStat label="Captured" value={counts.captured} tone="neutral" />
+          <FunnelStat label="Routed" value={counts.routed} tone="info" />
+          <FunnelStat label="Engaged" value={counts.engaged} tone="info" />
+          <FunnelStat label="Converted" value={counts.converted} tone="success" />
+        </div>
+        {(counts.stalled > 0 || counts.cold > 0 || counts.archived > 0) && (
+          <div className="grid grid-cols-3 gap-3 mt-3">
+            <FunnelStat label="Stalled" value={counts.stalled} tone="warning" />
+            <FunnelStat label="Cold" value={counts.cold} tone="warning" />
+            <FunnelStat label="Archived" value={counts.archived} tone="neutral" />
+          </div>
+        )}
+      </section>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Events</CardTitle>
-            <CardDescription>
-              Set up capture flows for each event (YP40, future events). Each
-              event gets a public booth-form URL.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="text-sm text-text-muted">
-            Not yet available.
-          </CardContent>
-        </Card>
-      </div>
+      {/* Per-event */}
+      {perEvent.length > 0 && (
+        <section>
+          <h2 className="text-lg font-semibold text-text-primary mb-3">By event</h2>
+          <div className="flex flex-col gap-2">
+            {perEvent.map((row) => (
+              <Card key={row.event.id}>
+                <CardContent className="flex items-center justify-between gap-4 p-4">
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <span className="truncate font-medium text-text-primary">
+                      {row.event.name}
+                    </span>
+                    <span className="text-xs text-text-muted">
+                      {row.event.is_active ? "Active" : "Closed"} · {row.total} captured ·{" "}
+                      {row.captured} new · {row.routed} in flight · {row.converted} converted
+                    </span>
+                  </div>
+                  <span className="shrink-0 rounded-full border border-border px-3 py-1 text-xs font-medium text-text-secondary">
+                    {row.total > 0 ? Math.round((row.converted / row.total) * 100) : 0}%
+                  </span>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </section>
+      )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Provisioning check</CardTitle>
-          <CardDescription>
-            What the system thinks your account is.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2 text-sm">
-          <div className="flex justify-between gap-4">
-            <span className="text-text-muted">Role</span>
-            <span className="font-medium text-text-primary">{auth.profile.role}</span>
+      {/* Per-branch */}
+      {branchSummary.length > 0 && (
+        <section>
+          <h2 className="text-lg font-semibold text-text-primary mb-3">By receiving branch</h2>
+          <div className="flex flex-col gap-2">
+            {branchSummary.map((row) => {
+              const rate = row.routed > 0 ? Math.round((row.converted / row.routed) * 100) : 0;
+              return (
+                <Card key={row.branchId}>
+                  <CardContent className="flex items-center justify-between gap-4 p-4">
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                      <span className="truncate font-medium text-text-primary">
+                        {row.branchName}
+                      </span>
+                      <span className="text-xs text-text-muted">
+                        {row.routed} routed · {row.converted} converted
+                      </span>
+                    </div>
+                    <span
+                      className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium ${
+                        rate >= 50
+                          ? "border-state-success text-state-success"
+                          : rate >= 20
+                            ? "border-state-warning text-state-warning"
+                            : "border-state-error text-state-error"
+                      }`}
+                    >
+                      {rate}%
+                    </span>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
-          <div className="flex justify-between gap-4">
-            <span className="text-text-muted">Branch</span>
-            <span className="font-medium text-text-primary">
-              {auth.branch?.name ?? "—"}
-            </span>
+        </section>
+      )}
+
+      {/* Recent activity */}
+      {recent.length > 0 && (
+        <section>
+          <div className="flex items-end justify-between mb-3">
+            <h2 className="text-lg font-semibold text-text-primary">Recent captures</h2>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/wing/triage">View triage</Link>
+            </Button>
           </div>
-          <div className="flex justify-between gap-4">
-            <span className="text-text-muted">Branch type</span>
-            <span className="font-medium text-text-primary">
-              {auth.branch?.branch_type ?? "—"}
-            </span>
+          <div className="flex flex-col gap-2">
+            {recent.map((lead) => {
+              const event = eventById.get(lead.event_id);
+              return (
+                <Card key={lead.id}>
+                  <CardContent className="flex items-center justify-between gap-4 p-4">
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                      <span className="truncate font-medium text-text-primary">
+                        {lead.full_name}
+                      </span>
+                      <span className="text-xs text-text-muted">
+                        {event?.name ?? "Unknown event"} ·{" "}
+                        {formatDistanceToNow(new Date(lead.captured_at), { addSuffix: true })}
+                      </span>
+                    </div>
+                    <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-xs font-medium text-text-secondary">
+                      {lead.status}
+                    </span>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
-        </CardContent>
-      </Card>
+        </section>
+      )}
     </div>
+  );
+}
+
+function FunnelStat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: "neutral" | "info" | "warning" | "success";
+}) {
+  const toneClass = {
+    neutral: "border-border text-text-primary",
+    info: "border-state-info text-state-info",
+    warning: "border-state-warning text-state-warning",
+    success: "border-state-success text-state-success",
+  }[tone];
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className={`mb-1 inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${toneClass}`}>
+          {label}
+        </div>
+        <p className="text-3xl font-bold text-text-primary">{value}</p>
+      </CardContent>
+    </Card>
   );
 }

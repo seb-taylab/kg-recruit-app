@@ -9,6 +9,7 @@ import type { InvitableRole } from "@/app/(dashboard)/branch/team/actions";
 
 interface TeamProfile {
   id: string;
+  user_id: string;
   full_name: string | null;
   role: UserRole;
   position: string | null;
@@ -37,7 +38,7 @@ export default async function TeamPage() {
 
   const { data: rows } = await admin
     .from("profiles" as never)
-    .select("id, full_name, role, position, is_active, created_at")
+    .select("id, user_id, full_name, role, position, is_active, created_at")
     .eq("branch_id", auth.branch.id)
     .order("created_at", { ascending: true });
   const profiles = (rows as TeamProfile[] | null) ?? [];
@@ -95,11 +96,13 @@ export default async function TeamPage() {
                 key={p.id}
                 profileId={p.id}
                 fullName={p.full_name ?? "(no name)"}
-                email={emailById.get(p.id) ?? "(no email on auth record)"}
+                /* Email keyed by auth user id (not profile id) under
+                   multi-profile — profile.id is now an independent UUID. */
+                email={emailById.get(p.user_id) ?? "(no email on auth record)"}
                 role={p.role}
                 position={p.position}
                 isActive={p.is_active}
-                isSelf={p.id === auth.userId}
+                isSelf={p.user_id === auth.userId}
                 canChangeRole={isMaster}
                 canChangeEmail={isMaster}
                 canManage={canManageThis}

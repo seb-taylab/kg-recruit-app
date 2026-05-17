@@ -8,6 +8,7 @@ import type { UserRole } from "@/types/database";
 
 interface ProfileRow {
   id: string;
+  user_id: string;
   full_name: string | null;
   role: UserRole;
   branch_id: string | null;
@@ -55,7 +56,7 @@ export default async function TaylabUsersPage({
     admin.from("branches" as never).select("id, name").order("name"),
     admin
       .from("profiles" as never)
-      .select("id, full_name, role, branch_id, is_active")
+      .select("id, user_id, full_name, role, branch_id, is_active")
       .order("full_name"),
     admin.auth.admin.listUsers({ page: 1, perPage: 500 }),
   ]);
@@ -171,7 +172,10 @@ export default async function TaylabUsersPage({
                       )}
                     </p>
                     <p className="text-xs text-text-secondary">
-                      {emailById.get(p.id) ?? "(no email)"} · {ROLE_LABELS[p.role]} ·{" "}
+                      {/* Email keyed by auth user id under multi-profile —
+                          profile.id is independent UUID, profile.user_id is
+                          the FK to auth.users. */}
+                      {emailById.get(p.user_id) ?? "(no email)"} · {ROLE_LABELS[p.role]} ·{" "}
                       {p.branch_id ? (branchNameById.get(p.branch_id) ?? "(unknown)") : "—"}
                     </p>
                   </div>

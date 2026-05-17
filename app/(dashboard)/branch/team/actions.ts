@@ -162,23 +162,37 @@ const idSchema = z.object({ profileId: z.string().uuid() });
 
 async function loadTargetProfile(profileId: string, branchId: string) {
   const admin = createAdminClient();
+  // user_id is critical under the multi-profile model — auth API calls
+  // (getUserById, updateUserById, generateLink) take the AUTH user id, not
+  // the profile id. branchId param kept for API symmetry; callers also
+  // verify target.branch_id matches.
+  void branchId;
   const { data: row } = await admin
     .from("profiles" as never)
-    .select("id, branch_id, role, is_active, full_name")
+    .select("id, user_id, branch_id, role, is_active, full_name")
     .eq("id", profileId)
     .single();
   return row as
-    | { id: string; branch_id: string; role: UserRole; is_active: boolean; full_name: string | null }
+    | {
+        id: string;
+        user_id: string;
+        branch_id: string;
+        role: UserRole;
+        is_active: boolean;
+        full_name: string | null;
+      }
     | null;
 }
 
 function canManageTarget(
   callerRole: UserRole,
   targetRole: UserRole,
-  callerId: string,
-  targetId: string,
+  callerUserId: string,
+  targetUserId: string,
 ): string | null {
-  if (callerId === targetId) {
+  // Compare auth USER ids — not profile ids. A user might have multiple
+  // profiles; "self" means same underlying auth user.
+  if (callerUserId === targetUserId) {
     return "You can't act on your own account here.";
   }
   if (callerRole === "branch_master_admin") return null;
@@ -210,7 +224,7 @@ export async function deactivateUserAction(
   if (!target || target.branch_id !== auth.branch.id) {
     return { ok: false, error: "Profile not found." };
   }
-  const denied = canManageTarget(auth.profile.role, target.role, auth.userId, target.id);
+  const denied = canManageTarget(auth.profile.role, target.role, auth.userId, target.user_id);
   if (denied) return { ok: false, error: denied };
   if (!target.is_active) return { ok: false, error: "Already deactivated." };
 
@@ -260,7 +274,7 @@ export async function reactivateUserAction(
   if (!target || target.branch_id !== auth.branch.id) {
     return { ok: false, error: "Profile not found." };
   }
-  const denied = canManageTarget(auth.profile.role, target.role, auth.userId, target.id);
+  const denied = canManageTarget(auth.profile.role, target.role, auth.userId, target.user_id);
   if (denied) return { ok: false, error: denied };
   if (target.is_active) return { ok: false, error: "Already active." };
 
@@ -323,16 +337,17 @@ export async function changeUserRoleAction(
   if (auth.profile.role !== "branch_master_admin") {
     return { ok: false, error: "Only the Master Admin can change roles." };
   }
-  if (profileId === auth.userId) {
-    return {
-      ok: false,
-      error: "Promote someone else to Master Admin first — your role flips automatically.",
-    };
-  }
 
   const target = await loadTargetProfile(profileId, auth.branch.id);
   if (!target || target.branch_id !== auth.branch.id) {
     return { ok: false, error: "Profile not found." };
+  }
+  // Self-check: under multi-profile, compare auth USER ids, not profile ids.
+  if (target.user_id === auth.userId) {
+    return {
+      ok: false,
+      error: "Promote someone else to Master Admin first — your role flips automatically.",
+    };
   }
   if (target.role === newRole) {
     return { ok: false, error: "Already in that role." };
@@ -342,14 +357,17 @@ export async function changeUserRoleAction(
   const now = new Date().toISOString();
 
   // Promoting to master_admin: demote current master in the same call so
-  // we never have zero or two masters at any visible moment.
+  // we never have zero or two masters at any visible moment. Under multi-
+  // profile the current admin might have profiles in OTHER branches too —
+  // we must demote ONLY their profile in THIS branch.
   if (newRole === "branch_master_admin") {
     const { error: demoteErr } = await admin
       .from("profiles" as never)
       .update({
         role: "branch_admin",
       } as never)
-      .eq("id", auth.userId);
+      .eq("user_id", auth.userId)
+      .eq("branch_id", auth.branch.id);
     if (demoteErr) {
       return { ok: false, error: "Couldn't swap Master Admin — try again." };
     }
@@ -417,22 +435,24 @@ export async function changeUserEmailAction(
   if (auth.profile.role !== "branch_master_admin") {
     return { ok: false, error: "Only the Master Admin can change email addresses." };
   }
-  if (profileId === auth.userId) {
+
+  const target = await loadTargetProfile(profileId, auth.branch.id);
+  if (!target || target.branch_id !== auth.branch.id) {
+    return { ok: false, error: "Profile not found." };
+  }
+  // Self-check via user_id (multi-profile model).
+  if (target.user_id === auth.userId) {
     return {
       ok: false,
       error: "Use your account settings to change your own email — not the Team tab.",
     };
   }
 
-  const target = await loadTargetProfile(profileId, auth.branch.id);
-  if (!target || target.branch_id !== auth.branch.id) {
-    return { ok: false, error: "Profile not found." };
-  }
-
   const admin = createAdminClient();
 
-  // Read the existing email so the audit log has before/after.
-  const { data: existing, error: getErr } = await admin.auth.admin.getUserById(target.id);
+  // Read the existing email so the audit log has before/after. Auth API
+  // calls take the AUTH user id (target.user_id), not the profile id.
+  const { data: existing, error: getErr } = await admin.auth.admin.getUserById(target.user_id);
   if (getErr || !existing?.user) {
     return { ok: false, error: "Couldn't load the target user." };
   }
@@ -441,7 +461,7 @@ export async function changeUserEmailAction(
     return { ok: false, error: "That's already their email." };
   }
 
-  const { error: updateErr } = await admin.auth.admin.updateUserById(target.id, {
+  const { error: updateErr } = await admin.auth.admin.updateUserById(target.user_id, {
     email: newEmail,
     email_confirm: true,
   });
@@ -496,11 +516,12 @@ export async function triggerPasswordResetAction(
   if (!target || target.branch_id !== auth.branch.id) {
     return { ok: false, error: "Profile not found." };
   }
-  const denied = canManageTarget(auth.profile.role, target.role, auth.userId, target.id);
+  const denied = canManageTarget(auth.profile.role, target.role, auth.userId, target.user_id);
   if (denied) return { ok: false, error: denied };
 
   const admin = createAdminClient();
-  const { data: authRow, error: getErr } = await admin.auth.admin.getUserById(target.id);
+  // Auth API takes AUTH user id (target.user_id), not profile id.
+  const { data: authRow, error: getErr } = await admin.auth.admin.getUserById(target.user_id);
   if (getErr || !authRow?.user?.email) {
     return { ok: false, error: "Couldn't find an email for this user." };
   }
