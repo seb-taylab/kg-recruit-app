@@ -27,7 +27,10 @@ export type RoutingMode = "direct_to_chairman" | "via_branch_admin_review";
 export type BranchType = "territorial" | "wing";
 
 export interface Profile {
+  /** Profile identity (multi-profile model: independent UUID, not auth.users.id). */
   id: string;
+  /** Auth user FK. Many profiles per user; multi-profile model added 2026-05-17. */
+  user_id: string;
   full_name: string | null;
   role: UserRole;
   branch_id: string | null;

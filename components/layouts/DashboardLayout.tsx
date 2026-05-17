@@ -24,18 +24,22 @@ interface DashboardLayoutProps {
 }
 
 export function DashboardLayout({ auth, children }: DashboardLayoutProps) {
-  const { profile, branch, email } = auth;
+  const { activeProfile, activeBranch, email, profiles } = auth;
   return (
     <>
       <SkipToContent />
       <div className="flex min-h-screen bg-surface-page">
-        <Sidebar role={profile.role} branchName={branch?.name} />
+        <Sidebar
+          role={activeProfile.role}
+          branchName={activeBranch?.name}
+          workspaceCount={profiles.length}
+        />
         <div className="flex min-w-0 flex-1 flex-col">
           <TopBar
-            fullName={profile.full_name}
+            fullName={activeProfile.full_name}
             email={email}
-            role={profile.role}
-            branchName={branch?.name}
+            role={activeProfile.role}
+            branchName={activeBranch?.name}
           />
           <main
             id="main"
@@ -44,7 +48,7 @@ export function DashboardLayout({ auth, children }: DashboardLayoutProps) {
             {children}
           </main>
         </div>
-        <MobileBottomNav role={profile.role} />
+        <MobileBottomNav role={activeProfile.role} />
       </div>
     </>
   );

@@ -9,6 +9,7 @@
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { clearActiveProfileCookie } from "@/lib/auth/active-profile";
 
 export async function POST(request: NextRequest) {
   const { origin, host } = new URL(request.url);
@@ -30,5 +31,8 @@ export async function POST(request: NextRequest) {
 
   const supabase = await createClient();
   await supabase.auth.signOut();
+  // Clear the active-profile cookie too — next signin should re-pick the
+  // workspace, not inherit this session's selection.
+  await clearActiveProfileCookie();
   return NextResponse.redirect(`${origin}/login`, { status: 303 });
 }
