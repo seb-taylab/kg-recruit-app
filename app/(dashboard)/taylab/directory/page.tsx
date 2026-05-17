@@ -30,14 +30,40 @@ export default async function TaylabDirectoryPage() {
   }
 
   const admin = createAdminClient();
-  const { data } = await admin
-    .from("constituency_directory" as never)
-    .select(
-      "constituency, constituency_type, district, verification_status, updated_at, boundary_version, updated_by_user_id",
-    )
-    .order("verification_status", { ascending: true }) // seed before verified
-    .order("constituency", { ascending: true });
-  const rows = (data as ConstituencyDirectoryEntry[] | null) ?? [];
+  const [{ data: dirData }, { data: branchData }] = await Promise.all([
+    admin
+      .from("constituency_directory" as never)
+      .select(
+        "constituency, constituency_type, district, verification_status, updated_at, boundary_version, updated_by_user_id",
+      )
+      .order("verification_status", { ascending: true })
+      .order("constituency", { ascending: true }),
+    admin
+      .from("branches" as never)
+      .select("id, name, constituency")
+      .eq("branch_type", "territorial")
+      .eq("is_active", true),
+  ]);
+  const rows = (dirData as ConstituencyDirectoryEntry[] | null) ?? [];
+
+  // Build a map of constituency → branches operating there. This makes the
+  // "Kampong Glam branch is in Jalan Besar GRC" relationship visible in the
+  // directory itself. Match case-insensitively + substring containment
+  // (same logic as lib/sg/district-resolve.ts).
+  const branches =
+    (branchData as Array<{ id: string; name: string; constituency: string | null }> | null) ?? [];
+  const branchesByConstituency = new Map<string, string[]>();
+  for (const row of rows) {
+    const target = row.constituency.toLowerCase();
+    const matched = branches
+      .filter((b) => {
+        if (!b.constituency) return false;
+        const c = b.constituency.toLowerCase();
+        return c === target || c.includes(target) || target.includes(c);
+      })
+      .map((b) => b.name);
+    branchesByConstituency.set(row.constituency, matched);
+  }
 
   const needsReview = rows.filter((r) => r.verification_status === "seed");
   const verified = rows.filter((r) => r.verification_status !== "seed");
@@ -77,6 +103,7 @@ export default async function TaylabDirectoryPage() {
                 constituency_type={r.constituency_type}
                 district={r.district}
                 verification_status={r.verification_status}
+                branchNames={branchesByConstituency.get(r.constituency) ?? []}
               />
             ))}
           </CardContent>
@@ -99,6 +126,7 @@ export default async function TaylabDirectoryPage() {
                 constituency_type={r.constituency_type}
                 district={r.district}
                 verification_status={r.verification_status}
+                branchNames={branchesByConstituency.get(r.constituency) ?? []}
               />
             ))}
           </CardContent>

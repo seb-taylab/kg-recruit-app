@@ -33,6 +33,11 @@ interface DirectoryRowProps {
     | "South West"
     | null;
   verification_status: "seed" | "verified" | "manual";
+  /** Names of territorial branches operating in this constituency (if any).
+   * Surfaces the branch ↔ constituency relationship so taylab can see "JALAN
+   * BESAR GRC has 1 branch: Kampong Glam" at a glance — and notice gaps
+   * (constituencies with no branch coverage). */
+  branchNames: string[];
 }
 
 const DISTRICTS = [
@@ -50,6 +55,7 @@ export function DirectoryRow({
   constituency_type,
   district,
   verification_status,
+  branchNames,
 }: DirectoryRowProps) {
   const router = useRouter();
   const [value, setValue] = React.useState<string>(district ?? NULL_VALUE);
@@ -98,7 +104,12 @@ export function DirectoryRow({
     <div className="grid grid-cols-1 gap-3 rounded-md border border-border bg-surface-card p-4 sm:grid-cols-[1fr_120px_220px_auto] sm:items-center">
       <div className="flex flex-col gap-0.5">
         <span className="font-medium text-text-primary">{constituency}</span>
-        <span className="text-xs text-text-muted">{constituency_type}</span>
+        <span className="text-xs text-text-muted">
+          {constituency_type}
+          {branchNames.length > 0
+            ? ` · ${branchNames.length} branch${branchNames.length === 1 ? "" : "es"}: ${branchNames.join(", ")}`
+            : ""}
+        </span>
       </div>
 
       <span
