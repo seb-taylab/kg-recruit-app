@@ -46,6 +46,57 @@ interface TerritorialBranch {
   constituency: string | null;
 }
 
+/**
+ * History row joined with the FROM-branch name. Used to surface "Returned
+ * by {branch}" hints on leads that have come back to the wing's queue.
+ */
+interface HistoryRow {
+  lead_id: string;
+  from_branch_id: string | null;
+  to_branch_id: string;
+  reason: string;
+  reason_note: string | null;
+  routed_at: string;
+  from_branch: { name: string } | { name: string }[] | null;
+}
+
+/** Compact attribution shown on a CAPTURED lead that was previously returned
+ *  by a branch. Drives the "↶ Returned by KG · Wrong constituency" pill. */
+interface ReturnedAttribution {
+  fromBranchName: string;
+  reasonLabel: string;
+  reasonNote: string | null;
+  routedAt: string;
+}
+
+// Mirrors the reason values used by returnLeadToWingAction; pretty for UI.
+const RETURN_REASON_PRETTY: Record<string, string> = {
+  wrong_constituency: "Wrong constituency",
+  already_member: "Already a member elsewhere",
+  not_residing_here: "Not residing here",
+  applicant_request: "Applicant request",
+  quality_concern: "Quality concern",
+  other: "Other",
+};
+
+/** Best-effort: branch return action composes reason_note as
+ *  "Reason: wrong_constituency — {free text}". Extract the structured
+ *  reason label if the prefix is present; otherwise fall back to a generic
+ *  "Returned" label. */
+function parseReturnedReasonNote(note: string | null): {
+  label: string;
+  freeText: string | null;
+} {
+  if (!note) return { label: "Returned", freeText: null };
+  const match = note.match(/^Reason:\s*([a-z_]+)(?:\s*—\s*(.*))?$/i);
+  if (!match) return { label: "Returned", freeText: note };
+  const key = match[1].toLowerCase();
+  return {
+    label: RETURN_REASON_PRETTY[key] ?? "Returned",
+    freeText: match[2]?.trim() || null,
+  };
+}
+
 export default async function WingTriagePage() {
   const auth = await requireAuth();
 
@@ -81,6 +132,42 @@ export default async function WingTriagePage() {
     .eq("is_active", true)
     .order("name");
   const territorialBranches = (branchRows as TerritorialBranch[] | null) ?? [];
+
+  // Sprint 6 polish — Returned-from-branch attribution. For every visible
+  // lead, pull the latest history rows so the UI can surface
+  // "↶ Returned by KG · Wrong constituency" on leads that came back to
+  // the wing's queue after a branch declined them. One round-trip; we
+  // group + pick latest per lead in-memory because the volume is small.
+  const leadIds = leads.map((l) => l.id);
+  const returnedByLead = new Map<string, ReturnedAttribution>();
+  if (leadIds.length > 0) {
+    const { data: historyRows } = await admin
+      .from("lead_route_history" as never)
+      .select(
+        `lead_id, from_branch_id, to_branch_id, reason, reason_note, routed_at,
+         from_branch:branches!lead_route_history_from_branch_id_fkey(name)`,
+      )
+      .in("lead_id", leadIds)
+      .eq("reason", "branch_declined")
+      .order("routed_at", { ascending: false });
+    const history = (historyRows as HistoryRow[] | null) ?? [];
+    for (const row of history) {
+      // Only register the LATEST branch-declined event per lead — the loop
+      // is ordered DESC, so the first hit per lead wins.
+      if (returnedByLead.has(row.lead_id)) continue;
+      const fromBranch = Array.isArray(row.from_branch)
+        ? row.from_branch[0]
+        : row.from_branch;
+      if (!fromBranch) continue;
+      const parsed = parseReturnedReasonNote(row.reason_note);
+      returnedByLead.set(row.lead_id, {
+        fromBranchName: fromBranch.name,
+        reasonLabel: parsed.label,
+        reasonNote: parsed.freeText,
+        routedAt: row.routed_at,
+      });
+    }
+  }
 
   // Sprint 5: postal-code → constituency → suggested-branch lookup. One
   // round-trip for all visible leads. Lets the Route + Reroute dialogs
@@ -126,6 +213,7 @@ export default async function WingTriagePage() {
                 <LeadCard
                   key={lead.id}
                   lead={lead}
+                  returned={returnedByLead.get(lead.id) ?? null}
                   renderAction={
                     auth.profile.role === "wing_admin" ? (
                       <RouteLeadButton
@@ -163,6 +251,7 @@ export default async function WingTriagePage() {
                 <LeadCard
                   key={lead.id}
                   lead={lead}
+                  returned={null}
                   renderAction={
                     auth.profile.role === "wing_admin" &&
                     lead.routed_to_branch_id &&
@@ -195,7 +284,12 @@ export default async function WingTriagePage() {
           </h2>
           <div className="flex flex-col gap-2">
             {closedLeads.slice(0, 20).map((lead) => (
-              <LeadCard key={lead.id} lead={lead} renderAction={null} />
+              <LeadCard
+                key={lead.id}
+                lead={lead}
+                returned={null}
+                renderAction={null}
+              />
             ))}
           </div>
         </section>
@@ -206,9 +300,13 @@ export default async function WingTriagePage() {
 
 function LeadCard({
   lead,
+  returned,
   renderAction,
 }: {
   lead: LeadRow;
+  /** Set only for CAPTURED leads that were previously returned by a
+   *  branch — surfaces a "↶ Returned by KG · Wrong constituency" pill. */
+  returned: ReturnedAttribution | null;
   renderAction: React.ReactNode;
 }) {
   const eventName = Array.isArray(lead.events)
@@ -220,13 +318,29 @@ function LeadCard({
   const capturedAgo = formatDistanceToNow(new Date(lead.captured_at), {
     addSuffix: true,
   });
+  const returnedAgo = returned
+    ? formatDistanceToNow(new Date(returned.routedAt), { addSuffix: true })
+    : null;
 
   return (
     <Card>
       <CardHeader>
         <div className="flex items-start justify-between gap-4">
-          <div className="flex flex-col gap-1">
-            <CardTitle className="text-base">{lead.full_name}</CardTitle>
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <CardTitle className="text-base">{lead.full_name}</CardTitle>
+              {/* Returned attribution pill — only shown on CAPTURED leads
+                  that have a branch-declined history entry. Makes it
+                  visually obvious that this isn't a fresh capture. */}
+              {returned && (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full border border-state-warning px-2 py-0.5 text-xs font-medium text-state-warning"
+                  title={returned.reasonNote ?? undefined}
+                >
+                  ↶ Returned by {returned.fromBranchName} · {returned.reasonLabel}
+                </span>
+              )}
+            </div>
             <CardDescription>
               {eventName} · captured {capturedAgo}
               {lead.postal_code ? ` · ${lead.postal_code}` : ""}
@@ -235,6 +349,14 @@ function LeadCard({
                 ? ` · rerouted ${lead.reroute_count}×`
                 : ""}
             </CardDescription>
+            {/* Optional free-text the branch admin left when returning.
+                Surfaced as a one-line note so wing can read it without
+                hovering for tooltips. */}
+            {returned?.reasonNote && (
+              <p className="text-xs italic text-text-muted">
+                &ldquo;{returned.reasonNote}&rdquo; — returned {returnedAgo}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <span className="rounded-full border border-border px-2 py-0.5 text-xs font-medium text-text-secondary">
