@@ -55,7 +55,17 @@ export async function signIn(_prev: SignInState | undefined, formData: FormData)
     return { error: "This account has been deactivated. Contact your branch coordinator." };
   }
 
-  const fallback = profile.role === "taylab_staff" ? "/taylab" : "/branch";
+  // Three landing zones:
+  //   taylab_staff           → /taylab (cross-tenant ops)
+  //   wing_admin/wing_chairman → /wing  (wing dispatcher workspace)
+  //   everything else        → /branch (the existing default for the 4
+  //                            territorial branch roles)
+  const fallback =
+    profile.role === "taylab_staff"
+      ? "/taylab"
+      : profile.role === "wing_admin" || profile.role === "wing_chairman"
+        ? "/wing"
+        : "/branch";
   // safeInternalPath rejects `//evil.com` (protocol-relative) and any
   // other shape that could escape the origin via redirect(). See
   // lib/auth/safe-redirect.ts.

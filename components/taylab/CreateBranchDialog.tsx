@@ -28,9 +28,12 @@ import {
 } from "@/components/ui/dialog";
 import { createBranchAction } from "@/app/(dashboard)/taylab/branches/actions";
 
+type BranchTypeOption = "territorial" | "wing";
+
 export function CreateBranchDialog() {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
+  const [branchType, setBranchType] = React.useState<BranchTypeOption>("territorial");
   const [name, setName] = React.useState("");
   const [constituency, setConstituency] = React.useState("");
   const [hqEmail, setHqEmail] = React.useState("");
@@ -39,21 +42,28 @@ export function CreateBranchDialog() {
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
+  const isWing = branchType === "wing";
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setPending(true);
     const result = await createBranchAction({
       name,
-      constituency,
+      branchType,
+      // Constituency is meaningful for territorial branches only; wings sit
+      // above constituencies and don't have one of their own.
+      constituency: isWing ? "" : constituency,
       hqEmail,
       masterAdminEmail: adminEmail,
       masterAdminName: adminName,
     });
     setPending(false);
     if (result.ok) {
-      toast.success(`Branch created — ${adminEmail} invited as Master Admin.`);
+      const adminLabel = isWing ? "Wing Admin" : "Master Admin";
+      toast.success(`Branch created — ${adminEmail} invited as ${adminLabel}.`);
       setOpen(false);
+      setBranchType("territorial");
       setName("");
       setConstituency("");
       setHqEmail("");
@@ -85,6 +95,58 @@ export function CreateBranchDialog() {
         )}
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+          {/* Branch type — territorial (constituency branch) vs wing (parent
+              layer that runs events + routes leads). Wings can't have a
+              constituency and their first admin is provisioned as
+              `wing_admin` rather than `branch_master_admin`. */}
+          <fieldset className="flex flex-col gap-2">
+            <legend className="text-sm font-medium text-text-primary">
+              Branch type
+            </legend>
+            <div className="grid grid-cols-2 gap-2">
+              <label
+                className={`flex cursor-pointer flex-col gap-1 rounded-md border p-3 text-sm transition-colors ${
+                  branchType === "territorial"
+                    ? "border-text-primary bg-surface-page"
+                    : "border-border hover:bg-surface-page"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="branchType"
+                  value="territorial"
+                  checked={branchType === "territorial"}
+                  onChange={() => setBranchType("territorial")}
+                  className="sr-only"
+                />
+                <span className="font-medium">Territorial</span>
+                <span className="text-xs text-text-muted">
+                  Constituency branch (e.g. Kampong Glam, Tampines).
+                </span>
+              </label>
+              <label
+                className={`flex cursor-pointer flex-col gap-1 rounded-md border p-3 text-sm transition-colors ${
+                  branchType === "wing"
+                    ? "border-text-primary bg-surface-page"
+                    : "border-border hover:bg-surface-page"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="branchType"
+                  value="wing"
+                  checked={branchType === "wing"}
+                  onChange={() => setBranchType("wing")}
+                  className="sr-only"
+                />
+                <span className="font-medium">Wing</span>
+                <span className="text-xs text-text-muted">
+                  Parent layer (e.g. Young PAP). Runs events; routes leads.
+                </span>
+              </label>
+            </div>
+          </fieldset>
+
           <div className="flex flex-col gap-2">
             <Label htmlFor="b-name">Branch name</Label>
             <Input
@@ -93,17 +155,20 @@ export function CreateBranchDialog() {
               onChange={(e) => setName(e.target.value)}
               required
               autoComplete="off"
+              placeholder={isWing ? "e.g. Young PAP" : "e.g. PAP Tampines"}
             />
           </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="b-constituency">Constituency (optional)</Label>
-            <Input
-              id="b-constituency"
-              value={constituency}
-              onChange={(e) => setConstituency(e.target.value)}
-              autoComplete="off"
-            />
-          </div>
+          {!isWing && (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="b-constituency">Constituency (optional)</Label>
+              <Input
+                id="b-constituency"
+                value={constituency}
+                onChange={(e) => setConstituency(e.target.value)}
+                autoComplete="off"
+              />
+            </div>
+          )}
           <div className="flex flex-col gap-2">
             <Label htmlFor="b-hq">HQ email (optional)</Label>
             <Input
@@ -116,7 +181,9 @@ export function CreateBranchDialog() {
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="adm-name">Master Admin name</Label>
+              <Label htmlFor="adm-name">
+                {isWing ? "Wing Admin name" : "Master Admin name"}
+              </Label>
               <Input
                 id="adm-name"
                 value={adminName}
@@ -126,7 +193,9 @@ export function CreateBranchDialog() {
               />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="adm-email">Master Admin email</Label>
+              <Label htmlFor="adm-email">
+                {isWing ? "Wing Admin email" : "Master Admin email"}
+              </Label>
               <Input
                 id="adm-email"
                 type="email"

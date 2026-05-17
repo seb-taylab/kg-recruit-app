@@ -52,7 +52,11 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
     const { data } = await supabase
       .from("branches")
       .select(
-        "id, name, constituency, hq_email, email_from_display_name, invite_ttl_hours, default_routing_mode, nudge_config, is_active, created_at",
+        // branch_type + parent_wing_id added in migration
+        // 20260517000001_wing_events_primitive.sql — exposed here so
+        // the wing workspace + routing logic can read them without a
+        // second round-trip.
+        "id, name, constituency, hq_email, email_from_display_name, invite_ttl_hours, default_routing_mode, nudge_config, is_active, created_at, branch_type, parent_wing_id",
       )
       .eq("id", profile.branch_id)
       .single();

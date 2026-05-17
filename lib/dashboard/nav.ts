@@ -16,6 +16,8 @@ import {
   Settings,
   Archive,
   FileText,
+  CalendarDays,
+  Flame,
   type LucideIcon,
 } from "lucide-react";
 import type { UserRole } from "@/types/database";
@@ -56,8 +58,28 @@ export const TAYLAB_NAV: NavItem[] = [
   { href: "/taylab/settings", label: "Platform settings", shortLabel: "Platform", icon: Settings, roles: ["taylab_staff"], primary: false },
 ];
 
+/**
+ * Wing workspace nav (added 2026-05-17 with the v4.1 lead-routing build).
+ * Sprint 1 ships ONLY the Overview placeholder — Triage (lead routing) +
+ * Events lists land in Sprint 2 and Sprint 3 respectively. The nav items
+ * are declared now so the Sidebar + MobileBottomNav can render them
+ * consistently as each page comes online.
+ */
+export const WING_NAV: NavItem[] = [
+  { href: "/wing",         label: "Overview", icon: LayoutGrid,   roles: ["wing_admin", "wing_chairman"], primary: true },
+  { href: "/wing/triage",  label: "Triage",   icon: Flame,        roles: ["wing_admin", "wing_chairman"], primary: true },
+  { href: "/wing/events",  label: "Events",   icon: CalendarDays, roles: ["wing_admin", "wing_chairman"], primary: true },
+  { href: "/wing/team",    label: "Team",     icon: Users,        roles: ["wing_admin"],                  primary: false },
+  { href: "/wing/settings",label: "Settings", icon: Settings,     roles: ["wing_admin"],                  primary: false },
+];
+
 export function getNavForRole(role: UserRole): NavItem[] {
-  const source = role === "taylab_staff" ? TAYLAB_NAV : BRANCH_NAV;
+  const source =
+    role === "taylab_staff"
+      ? TAYLAB_NAV
+      : role === "wing_admin" || role === "wing_chairman"
+        ? WING_NAV
+        : BRANCH_NAV;
   return source.filter((item) => item.roles.includes(role));
 }
 
@@ -81,11 +103,11 @@ export function splitNavForMobile(
 
 /**
  * Active-state matcher — same logic as the original Sidebar.
- * /branch (or /taylab) only highlights on exact match; nested routes get
- * the prefix-match treatment.
+ * Root routes (/branch, /taylab, /wing) only highlight on exact match;
+ * nested routes get the prefix-match treatment.
  */
 export function isNavItemActive(itemHref: string, pathname: string): boolean {
   if (pathname === itemHref) return true;
-  if (itemHref === "/branch" || itemHref === "/taylab") return false;
+  if (itemHref === "/branch" || itemHref === "/taylab" || itemHref === "/wing") return false;
   return pathname.startsWith(itemHref + "/");
 }

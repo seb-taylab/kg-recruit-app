@@ -21,6 +21,11 @@ export interface ActionResult {
 
 const createSchema = z.object({
   name: z.string().trim().min(2, "Branch name is too short").max(80),
+  // 'territorial' = constituency branch (KG, Tampines). 'wing' = parent layer
+  // (Young PAP) that runs events + routes leads. See migration
+  // 20260517000001_wing_events_primitive.sql. Default 'territorial' to keep
+  // existing flow unchanged for any caller that doesn't yet pass the field.
+  branchType: z.enum(["territorial", "wing"]).default("territorial"),
   constituency: z.string().trim().max(80).optional().or(z.literal("")),
   hqEmail: z.string().trim().email("Invalid HQ email").optional().or(z.literal("")),
   masterAdminEmail: z.string().trim().email("Invalid email"),
@@ -34,7 +39,8 @@ export async function createBranchAction(
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Bad input." };
   }
-  const { name, constituency, hqEmail, masterAdminEmail, masterAdminName } = parsed.data;
+  const { name, branchType, constituency, hqEmail, masterAdminEmail, masterAdminName } =
+    parsed.data;
 
   let auth;
   try {
@@ -49,11 +55,17 @@ export async function createBranchAction(
 
   const admin = createAdminClient();
 
+  // For wing branches the first admin is a `wing_admin` (operational); for
+  // territorial branches it's a `branch_master_admin` (the existing default).
+  // Chairman invites go through the team-management flow, not here.
+  const firstAdminRole = branchType === "wing" ? "wing_admin" : "branch_master_admin";
+
   // Insert the branch first so we have an id for the profile.
   const { data: branchRow, error: branchErr } = await admin
     .from("branches" as never)
     .insert({
       name,
+      branch_type: branchType,
       constituency: constituency && constituency.length > 0 ? constituency : null,
       hq_email: hqEmail && hqEmail.length > 0 ? hqEmail : null,
       is_active: true,
@@ -92,7 +104,7 @@ export async function createBranchAction(
   const { error: profErr } = await admin.from("profiles" as never).insert({
     id: invite.user.id,
     full_name: masterAdminName,
-    role: "branch_master_admin",
+    role: firstAdminRole,
     branch_id: branch.id,
     is_active: true,
     created_by_id: auth.userId,
@@ -112,8 +124,9 @@ export async function createBranchAction(
     metadata: {
       via: "branch_creation",
       branch_name: name,
+      branch_type: branchType,
       invited_email: masterAdminEmail,
-      invited_role: "branch_master_admin",
+      invited_role: firstAdminRole,
     },
   });
 
