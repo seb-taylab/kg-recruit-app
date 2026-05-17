@@ -76,8 +76,11 @@ export function WorkspacePicker({ workspaces }: WorkspacePickerProps) {
                 strokeWidth={1.5}
                 aria-hidden="true"
               />
+              {/* min-w-0 lets the column shrink below intrinsic content width
+                  (Button has flex-shrink-0 children by default) — required for
+                  the subtitle wrap to take effect on narrow mobile widths. */}
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="font-medium text-text-primary">
+                <span className="break-words font-medium text-text-primary">
                   {w.branchName}
                 </span>
                 {/* Subtitle composition:
@@ -85,8 +88,11 @@ export function WorkspacePicker({ workspaces }: WorkspacePickerProps) {
                     - wing roles: role only (the icon already says "wing")
                     - territorial: Role · Constituency · District
                     No more bare "territorial"/"wing" type strings — they're
-                    redundant with the icon + role label. */}
-                <span className="text-xs text-text-muted">
+                    redundant with the icon + role label.
+                    whitespace-normal + break-words override the Button's
+                    inherited whitespace-nowrap so long subtitles wrap on
+                    mobile instead of overflowing the card. */}
+                <span className="whitespace-normal break-words text-xs leading-snug text-text-muted">
                   {[
                     ROLE_LABEL[w.role] ?? w.role,
                     w.branchType === "territorial" ? w.constituency : null,
