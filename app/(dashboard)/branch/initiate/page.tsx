@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { requireAuth } from "@/lib/auth/get-user";
 import { isBranchAdminTeam } from "@/types/database";
 import { InviteForm } from "@/components/invite/InviteForm";
@@ -10,7 +9,12 @@ export default async function InitiatePage() {
   if (!auth.branch || !isBranchAdminTeam(auth.profile.role)) {
     redirect("/branch");
   }
-  const hqEmailMissing = !auth.branch.hq_email;
+
+  // HQ-email-missing prompt removed from this surface per 2026-05-18
+  // direction — inviting an applicant doesn't depend on the HQ email,
+  // and the warning was noise at the action moment. The prompt still
+  // appears on /branch/ready-to-send where the missing email genuinely
+  // blocks the next action.
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
@@ -23,16 +27,6 @@ export default async function InitiatePage() {
           copy, or WhatsApp.
         </p>
       </header>
-
-      {hqEmailMissing && (
-        <Alert variant="warning">
-          <AlertTitle>Set HQ email in Branch Settings</AlertTitle>
-          <AlertDescription>
-            You can still invite applicants now, but the HQ email is required before you can send
-            the final PDF.
-          </AlertDescription>
-        </Alert>
-      )}
 
       <Card>
         <CardHeader>

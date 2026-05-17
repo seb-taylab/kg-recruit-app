@@ -13,7 +13,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { requireAuth } from "@/lib/auth/get-user";
 import { createClient } from "@/lib/supabase/server";
@@ -48,7 +47,11 @@ export default async function BranchOverviewPage() {
     ]);
 
   const branchName = auth.branch?.name ?? "(no branch)";
-  const hqEmailMissing = auth.branch && !auth.branch.hq_email && !isChairman;
+
+  // HQ-email-missing prompt removed from Overview + Initiate per
+  // 2026-05-18 direction — both surfaces are pre-action and the warning
+  // was noise. The prompt still appears on /branch/ready-to-send where
+  // the missing email genuinely blocks the Send-to-HQ action.
 
   // Resolve constituency → district via the directory so the header shows
   // the hierarchical context: "Kampong Glam · Jalan Besar GRC · Central
@@ -74,19 +77,6 @@ export default async function BranchOverviewPage() {
           Welcome back, {auth.profile.full_name ?? auth.email}.
         </p>
       </header>
-
-      {hqEmailMissing && (
-        <Alert variant="warning">
-          <AlertTitle>Set HQ email in Branch Settings</AlertTitle>
-          <AlertDescription>
-            Branch HQ email is required before any application can be sent to HQ.{" "}
-            <Link href="/branch/settings" className="font-medium underline">
-              Configure now
-            </Link>
-            .
-          </AlertDescription>
-        </Alert>
-      )}
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {isChairman ? (
