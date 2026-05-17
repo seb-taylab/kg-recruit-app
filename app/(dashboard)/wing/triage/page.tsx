@@ -134,6 +134,8 @@ export default async function WingTriagePage() {
                         territorialBranches={territorialBranches}
                         suggestedConstituency={suggestion?.constituency ?? null}
                         suggestedBranchIds={suggestion?.suggestedBranchIds ?? []}
+                        suggestedDistrict={suggestion?.district ?? null}
+                        sameDistrictBranchIds={suggestion?.sameDistrictBranchIds ?? []}
                       />
                     ) : null
                   }
@@ -173,6 +175,8 @@ export default async function WingTriagePage() {
                         territorialBranches={territorialBranches}
                         suggestedConstituency={suggestion?.constituency ?? null}
                         suggestedBranchIds={suggestion?.suggestedBranchIds ?? []}
+                        suggestedDistrict={suggestion?.district ?? null}
+                        sameDistrictBranchIds={suggestion?.sameDistrictBranchIds ?? []}
                         rerouteCount={lead.reroute_count}
                       />
                     ) : null

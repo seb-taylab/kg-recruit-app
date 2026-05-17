@@ -46,6 +46,11 @@ interface RouteLeadButtonProps {
   suggestedConstituency?: string | null;
   /** Sprint 5: branch IDs that match the suggested constituency. */
   suggestedBranchIds?: string[];
+  /** Sprint 6: PAP district resolved via constituency_directory. */
+  suggestedDistrict?: string | null;
+  /** Sprint 6: same-district fallback branch IDs (one tier weaker than
+   * exact-constituency match — surfaced with a different marker). */
+  sameDistrictBranchIds?: string[];
 }
 
 export function RouteLeadButton({
@@ -54,15 +59,17 @@ export function RouteLeadButton({
   territorialBranches,
   suggestedConstituency = null,
   suggestedBranchIds = [],
+  suggestedDistrict = null,
+  sameDistrictBranchIds = [],
 }: RouteLeadButtonProps) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [targetId, setTargetId] = React.useState<string>("");
   const [pending, setPending] = React.useState(false);
 
-  // Pre-select the suggestion when there's exactly one match. Set on dialog
-  // open via onOpenChange (not inside useEffect — react-hooks lint forbids
-  // set-state-in-effect for derived defaults).
+  // Pre-select the suggestion when there's exactly one EXACT match. Set on
+  // dialog open via onOpenChange (not inside useEffect — react-hooks lint
+  // forbids set-state-in-effect for derived defaults).
   function handleOpenChange(next: boolean) {
     setOpen(next);
     if (next && targetId === "" && suggestedBranchIds.length === 1) {
@@ -70,17 +77,16 @@ export function RouteLeadButton({
     }
   }
 
-  const suggestedSet = new Set(suggestedBranchIds);
-  // Order suggestions first.
-  const ordered = territorialBranches
-    .slice()
-    .sort((a, b) =>
-      suggestedSet.has(a.id) === suggestedSet.has(b.id)
-        ? a.name.localeCompare(b.name)
-        : suggestedSet.has(a.id)
-          ? -1
-          : 1,
-    );
+  const exactSet = new Set(suggestedBranchIds);
+  const districtSet = new Set(sameDistrictBranchIds);
+  // Order: exact constituency match first (★), then same-district (◇),
+  // then everything else alphabetical.
+  const ordered = territorialBranches.slice().sort((a, b) => {
+    const aRank = exactSet.has(a.id) ? 0 : districtSet.has(a.id) ? 1 : 2;
+    const bRank = exactSet.has(b.id) ? 0 : districtSet.has(b.id) ? 1 : 2;
+    if (aRank !== bRank) return aRank - bRank;
+    return a.name.localeCompare(b.name);
+  });
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -119,11 +125,24 @@ export function RouteLeadButton({
 
           {suggestedConstituency && (
             <div className="my-4 rounded-md border border-border bg-surface-page p-3 text-sm">
-              <p className="text-text-muted">Suggested constituency (from postal code)</p>
-              <p className="font-medium text-text-primary">{suggestedConstituency}</p>
-              {suggestedBranchIds.length === 0 && (
+              <p className="text-text-muted">From postal code</p>
+              <p className="font-medium text-text-primary">
+                {suggestedConstituency}
+                {suggestedDistrict ? (
+                  <span className="font-normal text-text-secondary">
+                    {" · "}
+                    {suggestedDistrict} District
+                  </span>
+                ) : null}
+              </p>
+              {suggestedBranchIds.length === 0 && sameDistrictBranchIds.length === 0 && (
                 <p className="mt-1 text-xs text-text-muted">
-                  No territorial branch matches this constituency — pick the closest fit.
+                  No territorial branch matches this constituency or district — pick the closest fit.
+                </p>
+              )}
+              {suggestedBranchIds.length === 0 && sameDistrictBranchIds.length > 0 && (
+                <p className="mt-1 text-xs text-text-muted">
+                  No exact constituency match — ◇ rows are same-district fallbacks.
                 </p>
               )}
             </div>
@@ -135,13 +154,20 @@ export function RouteLeadButton({
                 <SelectValue placeholder="Pick a branch…" />
               </SelectTrigger>
               <SelectContent>
-                {ordered.map((b) => (
-                  <SelectItem key={b.id} value={b.id}>
-                    {suggestedSet.has(b.id) ? "★ " : ""}
-                    {b.name}
-                    {b.constituency ? ` · ${b.constituency}` : ""}
-                  </SelectItem>
-                ))}
+                {ordered.map((b) => {
+                  const marker = exactSet.has(b.id)
+                    ? "★ "
+                    : districtSet.has(b.id)
+                      ? "◇ "
+                      : "";
+                  return (
+                    <SelectItem key={b.id} value={b.id}>
+                      {marker}
+                      {b.name}
+                      {b.constituency ? ` · ${b.constituency}` : ""}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </div>

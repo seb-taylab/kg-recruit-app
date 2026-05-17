@@ -18,6 +18,7 @@ import {
   FileText,
   CalendarDays,
   Flame,
+  MapPin,
   type LucideIcon,
 } from "lucide-react";
 import type { UserRole } from "@/types/database";
@@ -54,6 +55,7 @@ export const TAYLAB_NAV: NavItem[] = [
   { href: "/taylab",          label: "Overview",          icon: LayoutGrid, roles: ["taylab_staff"], primary: true },
   { href: "/taylab/branches", label: "Branches",          icon: GitBranch,  roles: ["taylab_staff"], primary: true },
   { href: "/taylab/users",    label: "Users",             icon: Users,      roles: ["taylab_staff"], primary: true },
+  { href: "/taylab/directory",label: "Directory",         shortLabel: "Dir.", icon: MapPin, roles: ["taylab_staff"], primary: false },
   { href: "/taylab/audit",    label: "Audit log",         shortLabel: "Audit", icon: FileText, roles: ["taylab_staff"], primary: true },
   { href: "/taylab/settings", label: "Platform settings", shortLabel: "Platform", icon: Settings, roles: ["taylab_staff"], primary: false },
 ];

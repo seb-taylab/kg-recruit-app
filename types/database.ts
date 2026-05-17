@@ -152,6 +152,30 @@ export interface LeadRouteHistory {
 }
 
 /**
+ * Singapore PAP organizational district. Five values, mapped per
+ * GE2025 + PAP's district map. Constituencies belong to districts via
+ * constituency_directory; branches belong to constituencies via
+ * branches.constituency.
+ */
+export type PapDistrict =
+  | "Central"
+  | "East Coast"
+  | "North East"
+  | "North West"
+  | "West Coast";
+
+export interface ConstituencyDirectoryEntry {
+  constituency: string;
+  constituency_type: "GRC" | "SMC";
+  /** NULL = needs verification. */
+  district: PapDistrict | null;
+  boundary_version: string;
+  verification_status: "seed" | "verified" | "manual";
+  updated_at: string;
+  updated_by_user_id: string | null;
+}
+
+/**
  * Per-wing thresholds for triage scoring + reroute / cold-path policy.
  * One row per wing branch; absence implies the defaults baked into the
  * DB check constraints (2/5/7/14/30 day buckets, saturation 10).

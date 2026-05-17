@@ -46,8 +46,12 @@ interface RerouteLeadButtonProps {
   territorialBranches: TerritorialBranch[];
   /** ELD-derived constituency for the lead's postal code (display hint). */
   suggestedConstituency: string | null;
-  /** Branch IDs to pre-highlight as system suggestions. */
+  /** Branch IDs to pre-highlight as exact-constituency matches (★). */
   suggestedBranchIds: string[];
+  /** Sprint 6: PAP district resolved via constituency_directory. */
+  suggestedDistrict?: string | null;
+  /** Sprint 6: same-district fallback branches (◇). */
+  sameDistrictBranchIds?: string[];
   /** Existing reroute count — shown to underscore "this is reroute N+1". */
   rerouteCount: number;
 }
@@ -70,6 +74,8 @@ export function RerouteLeadButton({
   territorialBranches,
   suggestedConstituency,
   suggestedBranchIds,
+  suggestedDistrict = null,
+  sameDistrictBranchIds = [],
   rerouteCount,
 }: RerouteLeadButtonProps) {
   const router = useRouter();
@@ -81,17 +87,15 @@ export function RerouteLeadButton({
 
   // Available branches = all territorial branches except the current one.
   const available = territorialBranches.filter((b) => b.id !== currentBranchId);
-  const suggestedSet = new Set(suggestedBranchIds);
-  // Show suggested branches first.
-  const ordered = available
-    .slice()
-    .sort((a, b) =>
-      suggestedSet.has(a.id) === suggestedSet.has(b.id)
-        ? a.name.localeCompare(b.name)
-        : suggestedSet.has(a.id)
-          ? -1
-          : 1,
-    );
+  const exactSet = new Set(suggestedBranchIds);
+  const districtSet = new Set(sameDistrictBranchIds);
+  // Order: exact match (★), then same-district (◇), then alphabetical.
+  const ordered = available.slice().sort((a, b) => {
+    const aRank = exactSet.has(a.id) ? 0 : districtSet.has(a.id) ? 1 : 2;
+    const bRank = exactSet.has(b.id) ? 0 : districtSet.has(b.id) ? 1 : 2;
+    if (aRank !== bRank) return aRank - bRank;
+    return a.name.localeCompare(b.name);
+  });
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -137,11 +141,24 @@ export function RerouteLeadButton({
 
           {suggestedConstituency && (
             <div className="rounded-md border border-border bg-surface-page p-3 text-sm">
-              <p className="text-text-muted">Suggested constituency (from postal code)</p>
-              <p className="font-medium text-text-primary">{suggestedConstituency}</p>
-              {suggestedBranchIds.length === 0 && (
+              <p className="text-text-muted">From postal code</p>
+              <p className="font-medium text-text-primary">
+                {suggestedConstituency}
+                {suggestedDistrict ? (
+                  <span className="font-normal text-text-secondary">
+                    {" · "}
+                    {suggestedDistrict} District
+                  </span>
+                ) : null}
+              </p>
+              {suggestedBranchIds.length === 0 && sameDistrictBranchIds.length === 0 && (
                 <p className="mt-1 text-xs text-text-muted">
-                  No branch in this wing matches that constituency — pick the closest fit.
+                  No branch matches this constituency or district — pick the closest fit.
+                </p>
+              )}
+              {suggestedBranchIds.length === 0 && sameDistrictBranchIds.length > 0 && (
+                <p className="mt-1 text-xs text-text-muted">
+                  No exact constituency match — ◇ rows are same-district fallbacks.
                 </p>
               )}
             </div>
@@ -156,13 +173,20 @@ export function RerouteLeadButton({
                 <SelectValue placeholder="Pick a branch…" />
               </SelectTrigger>
               <SelectContent>
-                {ordered.map((b) => (
-                  <SelectItem key={b.id} value={b.id}>
-                    {suggestedSet.has(b.id) ? "★ " : ""}
-                    {b.name}
-                    {b.constituency ? ` · ${b.constituency}` : ""}
-                  </SelectItem>
-                ))}
+                {ordered.map((b) => {
+                  const marker = exactSet.has(b.id)
+                    ? "★ "
+                    : districtSet.has(b.id)
+                      ? "◇ "
+                      : "";
+                  return (
+                    <SelectItem key={b.id} value={b.id}>
+                      {marker}
+                      {b.name}
+                      {b.constituency ? ` · ${b.constituency}` : ""}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </div>
