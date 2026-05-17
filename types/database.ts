@@ -178,6 +178,30 @@ export interface ConstituencyDirectoryEntry {
 }
 
 /**
+ * Per-wing WhatsApp community invite. Surfaced on the capture confirmation
+ * panel after a lead submits the form. Three granularities:
+ *   • Both district + constituency NULL  → "main" — shown to every lead
+ *   • district set                       → shown when lead's postal resolves to this district
+ *   • constituency set                   → shown when lead's postal resolves to this constituency
+ * The CHECK constraint enforces at-most-one scope per row.
+ */
+export interface WingWhatsAppLink {
+  id: string;
+  wing_branch_id: string;
+  label: string;
+  invite_url: string;
+  district: PapDistrict | null;
+  constituency: string | null;
+  display_order: number;
+  is_active: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by_user_id: string | null;
+  updated_by_user_id: string | null;
+}
+
+/**
  * Per-wing thresholds for triage scoring + reroute / cold-path policy.
  * One row per wing branch; absence implies the defaults baked into the
  * DB check constraints (2/5/7/14/30 day buckets, saturation 10).

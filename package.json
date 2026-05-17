@@ -44,6 +44,7 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-hook-form": "^7.75.0",
+    "react-qr-code": "^2.0.21",
     "react-signature-canvas": "^1.0.7",
     "resend": "^4.8.0",
     "sonner": "^1.7.4",

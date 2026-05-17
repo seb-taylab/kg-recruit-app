@@ -18,6 +18,8 @@ import { requireAuth } from "@/lib/auth/get-user";
 import { isWingRole } from "@/types/database";
 import { getWingObservationPrefs } from "@/lib/wing/observation-prefs";
 import { ObservationPrefsForm } from "@/components/wing/ObservationPrefsForm";
+import { WhatsAppLinksEditor } from "@/components/wing/WhatsAppLinksEditor";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export default async function WingSettingsPage() {
   const auth = await requireAuth();
@@ -34,6 +36,35 @@ export default async function WingSettingsPage() {
   }
 
   const prefs = await getWingObservationPrefs(auth.activeBranch.id);
+
+  // WhatsApp community links + constituency choices for the editor.
+  const admin = createAdminClient();
+  const [{ data: linkRows }, { data: dirRows }] = await Promise.all([
+    admin
+      .from("wing_whatsapp_links" as never)
+      .select(
+        "id, label, invite_url, district, constituency, display_order, is_active, notes",
+      )
+      .eq("wing_branch_id", auth.activeBranch.id)
+      .order("display_order", { ascending: true }),
+    admin
+      .from("constituency_directory" as never)
+      .select("constituency, district")
+      .order("constituency"),
+  ]);
+  const whatsappLinks =
+    (linkRows as Array<{
+      id: string;
+      label: string;
+      invite_url: string;
+      district: string | null;
+      constituency: string | null;
+      display_order: number;
+      is_active: boolean;
+      notes: string | null;
+    }> | null) ?? [];
+  const constituencyChoices =
+    (dirRows as Array<{ constituency: string; district: string | null }> | null) ?? [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -68,6 +99,27 @@ export default async function WingSettingsPage() {
               {auth.activeBranch.hq_email ?? "—"}
             </span>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* WhatsApp community links — surfaced on the capture confirmation
+          panel. Wings configure per-link granularity (main / district /
+          constituency). Territorial branches don't have this surface. */}
+      <Card>
+        <CardHeader>
+          <CardTitle>WhatsApp community links</CardTitle>
+          <CardDescription>
+            Show on the capture confirmation screen so leads can request to join
+            your community on WhatsApp. Each link can be Main (everyone sees it),
+            district-scoped (matched by lead&rsquo;s postal code), or
+            constituency-scoped (finer-grained).
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <WhatsAppLinksEditor
+            initialLinks={whatsappLinks}
+            constituencies={constituencyChoices}
+          />
         </CardContent>
       </Card>
 

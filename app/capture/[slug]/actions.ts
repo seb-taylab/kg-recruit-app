@@ -17,6 +17,10 @@ import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/lib/auth/get-user";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { writeAuditLog } from "@/lib/audit/log";
+import {
+  matchWhatsAppLinksForLead,
+  type MatchedWhatsAppLink,
+} from "@/lib/wing/whatsapp-links";
 // Constants live in their own file because Next.js Turbopack rejects
 // non-async value exports from "use server" files. Type-only exports
 // (interface, type) are fine because they erase at runtime.
@@ -26,6 +30,10 @@ export interface CaptureResult {
   ok: boolean;
   error?: string;
   leadId?: string;
+  /** Name to greet on the confirmation panel (matches the lead's full_name). */
+  applicantFirstName?: string;
+  /** WhatsApp community links matched by district / constituency / main scope. */
+  whatsappLinks?: MatchedWhatsAppLink[];
   fieldErrors?: Partial<
     Record<"full_name" | "mobile_number" | "postal_code" | "nric_last_4" | "email" | "consent", string>
   >;
@@ -171,5 +179,26 @@ export async function captureLeadAction(
 
   revalidatePath("/wing/triage");
   revalidatePath("/wing/events");
-  return { ok: true, leadId: row.id };
+
+  // Resolve WhatsApp community links for the confirmation panel. Failures
+  // here (e.g. RLS quirk, no links configured) shouldn't fail the capture
+  // — we return an empty array and the panel just doesn't show links.
+  // auth.branch is the legacy alias for activeBranch; using it lets the
+  // existing null narrowing above carry through.
+  let whatsappLinks: MatchedWhatsAppLink[] = [];
+  try {
+    whatsappLinks = await matchWhatsAppLinksForLead({
+      wingBranchId: auth.branch!.id,
+      postalCode: data.postal_code,
+    });
+  } catch (err) {
+    console.error("[captureLeadAction] WhatsApp link match failed:", err);
+  }
+
+  return {
+    ok: true,
+    leadId: row.id,
+    applicantFirstName: data.full_name.split(/\s+/)[0] ?? data.full_name,
+    whatsappLinks,
+  };
 }

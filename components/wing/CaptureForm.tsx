@@ -24,6 +24,8 @@ import {
   captureLeadAction,
   type CaptureResult,
 } from "@/app/capture/[slug]/actions";
+import { CaptureConfirmation } from "@/components/wing/CaptureConfirmation";
+import type { MatchedWhatsAppLink } from "@/lib/wing/whatsapp-links";
 
 interface CaptureFormProps {
   eventSlug: string;
@@ -41,11 +43,19 @@ const INITIAL = {
   consent_pdpa: false,
 };
 
+interface ConfirmationState {
+  applicantFirstName: string;
+  links: MatchedWhatsAppLink[];
+}
+
 export function CaptureForm({ eventSlug, eventName, branchName, consentText }: CaptureFormProps) {
   const [values, setValues] = React.useState(INITIAL);
   const [errors, setErrors] = React.useState<CaptureResult["fieldErrors"]>({});
   const [topError, setTopError] = React.useState<string | null>(null);
   const [pending, setPending] = React.useState(false);
+  // On success, the form is replaced by the inline confirmation panel.
+  // null while the form is in capture mode.
+  const [confirmation, setConfirmation] = React.useState<ConfirmationState | null>(null);
 
   function set<K extends keyof typeof INITIAL>(k: K, v: (typeof INITIAL)[K]) {
     setValues((cur) => ({ ...cur, [k]: v }));
@@ -75,18 +85,43 @@ export function CaptureForm({ eventSlug, eventName, branchName, consentText }: C
     setPending(false);
 
     if (result.ok) {
-      toast.success(`Captured ${values.full_name}. Ready for the next attendee.`);
-      setValues(INITIAL);
-      setErrors({});
-      // Focus the first field for fast next-capture flow.
-      requestAnimationFrame(() => {
-        document.getElementById("cap-name")?.focus();
+      toast.success(`Captured ${values.full_name}.`);
+      // Swap to the confirmation panel. The form values stay in state so
+      // they're not lost if the admin wants to retry — but they'll be
+      // cleared when "Capture next" is pressed.
+      setConfirmation({
+        applicantFirstName: result.applicantFirstName ?? values.full_name,
+        links: result.whatsappLinks ?? [],
       });
+      setErrors({});
     } else if (result.fieldErrors) {
       setErrors(result.fieldErrors);
     } else {
       setTopError(result.error ?? "Couldn't save — try again.");
     }
+  }
+
+  function handleCaptureNext() {
+    setConfirmation(null);
+    setValues(INITIAL);
+    setErrors({});
+    setTopError(null);
+    // Focus the first field for fast next-capture flow.
+    requestAnimationFrame(() => {
+      document.getElementById("cap-name")?.focus();
+    });
+  }
+
+  // Confirmation mode — replaces the form on submit success. Single URL,
+  // single component swap; no modal stack, no extra route.
+  if (confirmation) {
+    return (
+      <CaptureConfirmation
+        applicantFirstName={confirmation.applicantFirstName}
+        links={confirmation.links}
+        onCaptureNext={handleCaptureNext}
+      />
+    );
   }
 
   return (
