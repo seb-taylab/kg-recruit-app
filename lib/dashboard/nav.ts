@@ -45,7 +45,7 @@ export const BRANCH_NAV: NavItem[] = [
   { href: "/branch/initiate", label: "Initiate",             icon: UserPlus,   roles: [...BRANCH_ADMIN_TEAM],                                                          primary: true },
   { href: "/branch/inbox",    label: "Inbox",                icon: Inbox,      roles: [...BRANCH_ADMIN_TEAM],                                                          primary: true },
   { href: "/branch/sign",     label: "Pending my signature", shortLabel: "Sign", icon: PenLine, roles: ["branch_chairman"],                                            primary: true },
-  { href: "/branch/journey",  label: "Applications",         icon: GitBranch,  roles: ["branch_master_admin", "branch_admin", "branch_team_member", "branch_chairman"], primary: true },
+  { href: "/branch/journey",  label: "Applications",         shortLabel: "Apps", icon: GitBranch,  roles: ["branch_master_admin", "branch_admin", "branch_team_member", "branch_chairman"], primary: true },
   { href: "/branch/history",  label: "History",              icon: Archive,    roles: [...BRANCH_ADMIN_TEAM],                                                          primary: false },
   { href: "/branch/team",     label: "Team",                 icon: Users,      roles: ["branch_master_admin", "branch_admin"],                                         primary: false },
   { href: "/branch/settings", label: "Settings",             icon: Settings,   roles: ["branch_master_admin", "branch_admin"],                                         primary: false },

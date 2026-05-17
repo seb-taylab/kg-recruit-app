@@ -13,7 +13,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LogOut } from "lucide-react";
+import { LogOut, ArrowLeftRight } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import type { NavItem } from "@/lib/dashboard/nav";
 import { isNavItemActive } from "@/lib/dashboard/nav";
@@ -30,10 +30,15 @@ interface MobileMoreSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   overflow: NavItem[];
+  /** Number of active workspaces for the current user. When > 1, the sheet
+   *  surfaces a "Switch workspace" affordance — desktop has the chip in
+   *  the sidebar; mobile reaches it via this sheet. */
+  workspaceCount?: number;
 }
 
-export function MobileMoreSheet({ open, onOpenChange, overflow }: MobileMoreSheetProps) {
+export function MobileMoreSheet({ open, onOpenChange, overflow, workspaceCount = 1 }: MobileMoreSheetProps) {
   const pathname = usePathname();
+  const showWorkspaceSwitcher = workspaceCount > 1;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -76,13 +81,40 @@ export function MobileMoreSheet({ open, onOpenChange, overflow }: MobileMoreShee
           </ul>
         )}
 
-        {/* Sign-out separator only renders when there's a nav list above
-            it to divide. Chairmen (no overflow items) see Sign out as the
-            sole content of the sheet — a stray top border there would
-            look broken. */}
+        {/* Workspace switcher — only when the user has multiple profiles.
+            Mobile equivalent of the sidebar chip; without this, users
+            previously had to sign out to switch (per Sebastian's audit). */}
+        {showWorkspaceSwitcher && (
+          <div
+            className={cn(
+              "mb-4",
+              overflow.length > 0 && "border-t border-border pt-4",
+            )}
+          >
+            <Link
+              href="/select-workspace"
+              onClick={() => onOpenChange(false)}
+              className="flex min-h-12 items-center gap-3 rounded-md px-3 py-3 text-sm font-medium text-text-secondary transition-colors duration-fast hover:bg-surface-page hover:text-text-primary"
+            >
+              <ArrowLeftRight
+                className="h-5 w-5 shrink-0"
+                strokeWidth={1.5}
+                aria-hidden="true"
+              />
+              <span className="truncate">
+                Switch workspace ({workspaceCount} available)
+              </span>
+            </Link>
+          </div>
+        )}
+
+        {/* Sign-out separator only renders when there's content above
+            to divide. Chairmen with no overflow + no workspace switcher
+            see Sign out as the sole content of the sheet — a stray top
+            border there would look broken. */}
         <div
           className={cn(
-            overflow.length > 0 && "border-t border-border pt-4",
+            (overflow.length > 0 || showWorkspaceSwitcher) && "border-t border-border pt-4",
           )}
         >
           <form action="/auth/logout" method="post">

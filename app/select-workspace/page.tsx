@@ -19,6 +19,7 @@ import { getAuthSession } from "@/lib/auth/get-user";
 import { setActiveProfileCookie } from "@/lib/auth/active-profile";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { WorkspacePicker } from "@/components/auth/WorkspacePicker";
+import { resolveBranchDistrictsForMany } from "@/lib/sg/district-resolve";
 
 interface BranchRow {
   id: string;
@@ -62,8 +63,19 @@ export default async function SelectWorkspacePage() {
     branchesById = new Map(rows.map((b) => [b.id, b]));
   }
 
+  // Resolve districts for territorial branches in one round-trip.
+  const districtMap = await resolveBranchDistrictsForMany(
+    Array.from(branchesById.values())
+      .filter((b) => b.branch_type === "territorial")
+      .map((b) => b.constituency),
+  );
+
   const workspaces = session.profiles.map((p) => {
     const branch = p.branch_id ? branchesById.get(p.branch_id) : null;
+    const ctx =
+      branch && branch.branch_type === "territorial" && branch.constituency
+        ? districtMap.get(branch.constituency.trim()) ?? null
+        : null;
     return {
       profileId: p.id,
       role: p.role,
@@ -73,6 +85,7 @@ export default async function SelectWorkspacePage() {
           : branch?.name ?? "(branch unknown)",
       branchType: branch?.branch_type ?? null,
       constituency: branch?.constituency ?? null,
+      district: ctx?.district ?? null,
     };
   });
 
@@ -83,7 +96,7 @@ export default async function SelectWorkspacePage() {
           <CardTitle>Pick a workspace</CardTitle>
           <CardDescription>
             Your account has access to multiple branches and wings. Choose
-            which one to open. You can switch later from the sidebar.
+            which one to open. You can switch later from the menu.
           </CardDescription>
         </CardHeader>
         <CardContent>

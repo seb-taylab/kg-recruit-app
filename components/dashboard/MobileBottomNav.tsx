@@ -24,9 +24,12 @@ import { MobileMoreSheet } from "./MobileMoreSheet";
 
 interface MobileBottomNavProps {
   role: UserRole;
+  /** Number of active profiles for the user — drives whether the More
+   *  sheet shows the "Switch workspace" link. */
+  workspaceCount?: number;
 }
 
-export function MobileBottomNav({ role }: MobileBottomNavProps) {
+export function MobileBottomNav({ role, workspaceCount = 1 }: MobileBottomNavProps) {
   const pathname = usePathname();
   const { primary, overflow } = splitNavForMobile(role, 4);
   const [moreOpen, setMoreOpen] = React.useState(false);
@@ -106,6 +109,7 @@ export function MobileBottomNav({ role }: MobileBottomNavProps) {
         open={moreOpen}
         onOpenChange={setMoreOpen}
         overflow={overflow}
+        workspaceCount={workspaceCount}
       />
     </>
   );

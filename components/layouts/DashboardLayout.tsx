@@ -48,7 +48,7 @@ export function DashboardLayout({ auth, children }: DashboardLayoutProps) {
             {children}
           </main>
         </div>
-        <MobileBottomNav role={activeProfile.role} />
+        <MobileBottomNav role={activeProfile.role} workspaceCount={profiles.length} />
       </div>
     </>
   );

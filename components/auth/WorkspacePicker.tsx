@@ -21,6 +21,8 @@ interface Workspace {
   branchName: string;
   branchType: "territorial" | "wing" | null;
   constituency: string | null;
+  /** Resolved via constituency_directory, for territorial branches. */
+  district: string | null;
 }
 
 interface WorkspacePickerProps {
@@ -78,10 +80,22 @@ export function WorkspacePicker({ workspaces }: WorkspacePickerProps) {
                 <span className="font-medium text-text-primary">
                   {w.branchName}
                 </span>
+                {/* Subtitle composition:
+                    - taylab_staff: just the role
+                    - wing roles: role only (the icon already says "wing")
+                    - territorial: Role · Constituency · District
+                    No more bare "territorial"/"wing" type strings — they're
+                    redundant with the icon + role label. */}
                 <span className="text-xs text-text-muted">
-                  {ROLE_LABEL[w.role] ?? w.role}
-                  {w.constituency ? ` · ${w.constituency}` : ""}
-                  {w.branchType ? ` · ${w.branchType}` : ""}
+                  {[
+                    ROLE_LABEL[w.role] ?? w.role,
+                    w.branchType === "territorial" ? w.constituency : null,
+                    w.branchType === "territorial" && w.district
+                      ? `${w.district} District`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </span>
               </div>
               {pending && (
