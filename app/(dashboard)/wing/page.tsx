@@ -4,10 +4,16 @@
  * Real content (Sprint 4): live lead funnel + per-event breakdown +
  * per-branch conversion summary. All driven by the leads table; no
  * placeholder copy.
+ *
+ * 2026-05-18: added per-branch return-rate column (#3 of the post-YP40
+ * audit). Sources from lead_route_history so reroutes-in count toward
+ * "received" — gives the wing an honest picture of routing quality vs
+ * each receiving branch ("KG: 5 received · 1 returned (20%) · 2 converted").
  */
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
+import { Check, Undo2 } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -41,6 +47,13 @@ interface BranchRow {
   name: string;
 }
 
+interface RouteHistoryRow {
+  lead_id: string;
+  from_branch_id: string | null;
+  to_branch_id: string;
+  reason: string;
+}
+
 export default async function WingOverviewPage() {
   const auth = await requireAuth();
 
@@ -54,8 +67,16 @@ export default async function WingOverviewPage() {
 
   const admin = createAdminClient();
 
-  // Pull everything we need in three queries. Volumes are small (wing-scoped).
-  const [{ data: leadRows }, { data: eventRows }, { data: branchRows }] = await Promise.all([
+  // Pull everything we need in four queries. Volumes are small (wing-scoped).
+  // lead_route_history is the source of truth for "received / returned" — the
+  // leads table only tells us the CURRENT routed_to_branch_id, which loses
+  // the trail after a return (NULL) or reroute (overwritten).
+  const [
+    { data: leadRows },
+    { data: eventRows },
+    { data: branchRows },
+    { data: historyRows },
+  ] = await Promise.all([
     admin
       .from("leads" as never)
       .select("id, status, captured_at, routed_to_branch_id, event_id, full_name")
@@ -69,11 +90,16 @@ export default async function WingOverviewPage() {
       .from("branches" as never)
       .select("id, name")
       .eq("branch_type", "territorial"),
+    admin
+      .from("lead_route_history" as never)
+      .select("lead_id, from_branch_id, to_branch_id, reason")
+      .eq("wing_branch_id", auth.activeBranch.id),
   ]);
 
   const leads = (leadRows as LeadRow[] | null) ?? [];
   const events = (eventRows as EventRow[] | null) ?? [];
   const branches = (branchRows as BranchRow[] | null) ?? [];
+  const history = (historyRows as RouteHistoryRow[] | null) ?? [];
   const branchById = new Map(branches.map((b) => [b.id, b.name]));
   const eventById = new Map(events.map((e) => [e.id, e]));
 
@@ -108,27 +134,54 @@ export default async function WingOverviewPage() {
     .filter((row) => row.total > 0)
     .sort((a, b) => b.total - a.total);
 
-  // Per-branch conversion summary (only branches that have received leads).
-  const perBranch = new Map<
-    string,
-    { branchId: string; branchName: string; routed: number; converted: number }
-  >();
+  // Per-branch summary (only branches that have ever received a lead from us).
+  //
+  // Counting model:
+  //   received  = times this branch was the to_branch_id in route history
+  //               (covers initial routes AND reroutes-into-this-branch — both
+  //               are "we handed them a lead").
+  //   returned  = times this branch was the from_branch_id with reason
+  //               'branch_declined' (the branch pushed the lead back).
+  //   converted = leads currently at this branch with status=CONVERTED.
+  //
+  // received is from history, not leads.routed_to_branch_id, so the count
+  // is stable after returns/reroutes (where the current pointer is gone).
+  interface BranchBucket {
+    branchId: string;
+    branchName: string;
+    received: number;
+    returned: number;
+    converted: number;
+  }
+  const perBranch = new Map<string, BranchBucket>();
+  const ensureBucket = (branchId: string): BranchBucket => {
+    const existing = perBranch.get(branchId);
+    if (existing) return existing;
+    const fresh: BranchBucket = {
+      branchId,
+      branchName: branchById.get(branchId) ?? "(unknown)",
+      received: 0,
+      returned: 0,
+      converted: 0,
+    };
+    perBranch.set(branchId, fresh);
+    return fresh;
+  };
+
+  for (const row of history) {
+    ensureBucket(row.to_branch_id).received += 1;
+    if (row.reason === "branch_declined" && row.from_branch_id) {
+      ensureBucket(row.from_branch_id).returned += 1;
+    }
+  }
   for (const lead of leads) {
     if (!lead.routed_to_branch_id) continue;
-    const key = lead.routed_to_branch_id;
-    const bucket =
-      perBranch.get(key) ??
-      {
-        branchId: key,
-        branchName: branchById.get(key) ?? "(unknown)",
-        routed: 0,
-        converted: 0,
-      };
-    bucket.routed += 1;
-    if (lead.status === "CONVERTED") bucket.converted += 1;
-    perBranch.set(key, bucket);
+    if (lead.status !== "CONVERTED") continue;
+    ensureBucket(lead.routed_to_branch_id).converted += 1;
   }
-  const branchSummary = Array.from(perBranch.values()).sort((a, b) => b.routed - a.routed);
+  const branchSummary = Array.from(perBranch.values()).sort(
+    (a, b) => b.received - a.received,
+  );
 
   // Most recent 5 leads — a tiny activity feed.
   const recent = leads.slice(0, 5);
@@ -203,10 +256,38 @@ export default async function WingOverviewPage() {
       {/* Per-branch */}
       {branchSummary.length > 0 && (
         <section>
-          <h2 className="text-lg font-semibold text-text-primary mb-3">By receiving branch</h2>
+          <div className="mb-3 flex flex-col gap-1">
+            <h2 className="text-lg font-semibold text-text-primary">By receiving branch</h2>
+            <p className="text-xs text-text-muted">
+              Return rate is the share of leads the branch pushed back to us
+              (wrong fit / not residing here / etc.). High = re-think routing
+              criteria or branch readiness.
+            </p>
+          </div>
           <div className="flex flex-col gap-2">
             {branchSummary.map((row) => {
-              const rate = row.routed > 0 ? Math.round((row.converted / row.routed) * 100) : 0;
+              const returnRate =
+                row.received > 0 ? Math.round((row.returned / row.received) * 100) : 0;
+              const conversionRate =
+                row.received > 0 ? Math.round((row.converted / row.received) * 100) : 0;
+
+              // Return-rate tone is INVERTED from conversion: 0% is good,
+              // ≥40% is alarming. Calibration is rough on small samples —
+              // for KG demo the bands are mostly cosmetic until we have
+              // more data.
+              const returnTone =
+                returnRate === 0
+                  ? "border-state-success text-state-success"
+                  : returnRate < 25
+                    ? "border-state-warning text-state-warning"
+                    : "border-state-error text-state-error";
+              const conversionTone =
+                conversionRate >= 50
+                  ? "border-state-success text-state-success"
+                  : conversionRate >= 20
+                    ? "border-state-warning text-state-warning"
+                    : "border-border text-text-muted";
+
               return (
                 <Card key={row.branchId}>
                   <CardContent className="flex items-center justify-between gap-4 p-4">
@@ -215,20 +296,34 @@ export default async function WingOverviewPage() {
                         {row.branchName}
                       </span>
                       <span className="text-xs text-text-muted">
-                        {row.routed} routed · {row.converted} converted
+                        {row.received} received · {row.returned} returned ·{" "}
+                        {row.converted} converted
                       </span>
                     </div>
-                    <span
-                      className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium ${
-                        rate >= 50
-                          ? "border-state-success text-state-success"
-                          : rate >= 20
-                            ? "border-state-warning text-state-warning"
-                            : "border-state-error text-state-error"
-                      }`}
-                    >
-                      {rate}%
-                    </span>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium ${returnTone}`}
+                        title="Return rate — share of leads this branch pushed back to us"
+                      >
+                        <Undo2
+                          className="h-3 w-3"
+                          strokeWidth={1.5}
+                          aria-hidden="true"
+                        />
+                        {returnRate}%
+                      </span>
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium ${conversionTone}`}
+                        title="Conversion rate — share of leads that became members"
+                      >
+                        <Check
+                          className="h-3 w-3"
+                          strokeWidth={1.5}
+                          aria-hidden="true"
+                        />
+                        {conversionRate}%
+                      </span>
+                    </div>
                   </CardContent>
                 </Card>
               );
