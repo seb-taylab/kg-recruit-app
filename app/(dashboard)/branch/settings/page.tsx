@@ -7,6 +7,7 @@ import { BranchSettingsForm } from "@/components/branch/BranchSettingsForm";
 import { NudgeStagesForm } from "@/components/branch/NudgeStagesForm";
 import { saveBranchNudgeStagesAction } from "@/app/(dashboard)/branch/settings/actions";
 import { NUDGE_STAGES, type NudgeStage, type NudgeConfig } from "@/lib/nudges/stages";
+import { resolveBranchDistrict } from "@/lib/sg/district-resolve";
 
 interface BranchRow {
   hq_email: string | null;
@@ -59,6 +60,12 @@ export default async function BranchSettingsPage() {
     NUDGE_STAGES.map((s) => [s, resolvedConfig?.[s]?.intervals_hours?.[0] ?? 168]),
   ) as Record<NudgeStage, number>;
 
+  // Resolve constituency → district for the "Branch context" card below.
+  // Wing branches don't get a district context (returns null cleanly).
+  const districtCtx = auth.branch.branch_type === "territorial"
+    ? await resolveBranchDistrict(auth.branch.constituency)
+    : null;
+
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
@@ -67,6 +74,43 @@ export default async function BranchSettingsPage() {
           Per-branch overrides. Leave a field blank to inherit the platform default.
         </p>
       </header>
+
+      {/* Branch context — name + constituency + district. Read-only;
+          constituency is renamed via Taylab platform staff for now. */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Branch context</CardTitle>
+          <CardDescription>
+            Hierarchical context this branch sits in. Constituency comes from the
+            <code className="mx-1">branches</code> row; district is resolved via the
+            constituency directory.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2 text-sm">
+          <div className="flex justify-between gap-4">
+            <span className="text-text-muted">Branch</span>
+            <span className="font-medium text-text-primary">{auth.branch.name}</span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-text-muted">Constituency</span>
+            <span className="font-medium text-text-primary">
+              {auth.branch.constituency ?? "—"}
+            </span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-text-muted">District</span>
+            <span className="font-medium text-text-primary">
+              {districtCtx?.district
+                ? `${districtCtx.district} District`
+                : districtCtx
+                  ? "Not assigned"
+                  : auth.branch.constituency
+                    ? "Constituency not recognised"
+                    : "—"}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

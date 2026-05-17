@@ -17,6 +17,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { requireAuth } from "@/lib/auth/get-user";
 import { createClient } from "@/lib/supabase/server";
+import { resolveBranchDistrict } from "@/lib/sg/district-resolve";
 
 const INBOX_STATUSES = [
   "PENDING_REFERRAL_ASSIGNMENT",
@@ -49,13 +50,27 @@ export default async function BranchOverviewPage() {
   const branchName = auth.branch?.name ?? "(no branch)";
   const hqEmailMissing = auth.branch && !auth.branch.hq_email && !isChairman;
 
+  // Resolve constituency → district via the directory so the header shows
+  // the hierarchical context: "Kampong Glam · Jalan Besar GRC · Central
+  // Singapore District". For wing branches or unmatched constituencies,
+  // returns null and the subtitle silently omits the chip.
+  const districtCtx = auth.branch?.branch_type === "territorial"
+    ? await resolveBranchDistrict(auth.branch.constituency)
+    : null;
+
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex flex-col gap-2">
+      <header className="flex flex-col gap-1">
         <h1 className="text-3xl font-bold leading-tight text-text-primary">
           {branchName}
         </h1>
-        <p className="text-text-secondary">
+        {districtCtx && (
+          <p className="text-sm text-text-muted">
+            {districtCtx.constituency}
+            {districtCtx.district ? ` · ${districtCtx.district} District` : ""}
+          </p>
+        )}
+        <p className="mt-1 text-text-secondary">
           Welcome back, {auth.profile.full_name ?? auth.email}.
         </p>
       </header>
@@ -108,8 +123,10 @@ export default async function BranchOverviewPage() {
 
         <Card>
           <CardHeader>
-            <CardDescription>All applications</CardDescription>
-            <CardTitle>Journey</CardTitle>
+            <CardDescription>Everything in pipeline</CardDescription>
+            {/* Matches the sidebar label "Applications" — previously
+                called "Journey" here which mismatched the nav item. */}
+            <CardTitle>Applications</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <p className="text-3xl font-bold text-text-primary">
