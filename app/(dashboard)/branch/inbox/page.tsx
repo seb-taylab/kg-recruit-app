@@ -8,7 +8,6 @@
  */
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { formatDistanceToNow } from "date-fns";
 import {
   Card,
   CardContent,
@@ -22,8 +21,13 @@ import { isBranchAdminTeam } from "@/types/database";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatDateDDMMMYYYY } from "@/lib/format/date";
-import { ConvertLeadButton } from "@/components/branch/ConvertLeadButton";
-import { MarkLeadEngagedButton } from "@/components/branch/MarkLeadEngagedButton";
+import { InboundLeadCard } from "@/components/branch/InboundLeadCard";
+import { suggestBranchesForPostals } from "@/lib/wing/postal-suggest";
+
+interface InboundEventRel {
+  name: string;
+  branches: { name: string } | { name: string }[] | null;
+}
 
 interface InboundLeadRow {
   id: string;
@@ -33,7 +37,10 @@ interface InboundLeadRow {
   status: string;
   routed_at: string | null;
   event_id: string;
-  events: { name: string } | { name: string }[] | null;
+  /* Two-step join: leads → events (name + owning wing branch_id) →
+     branches (wing name). Surfaces "Routed by Young PAP" on each card so
+     multi-wing inboxes stay distinguishable. */
+  events: InboundEventRel | InboundEventRel[] | null;
 }
 
 interface AppRow {
@@ -134,16 +141,29 @@ export default async function BranchInboxPage() {
   // query because leads live in a different table from applications.
   // Admin client because RLS for leads is policy-heavy and we've already
   // gated this page on isBranchAdminTeam + auth.branch.id above.
+  //
+  // Joined relations:
+  //   events     — for the event name shown in card provenance
+  //   branches   — through events.branch_id to surface the WING name
+  //                ("Routed by Young PAP"). Multi-wing ready.
   const adminClient = createAdminClient();
   const { data: leadRows } = await adminClient
     .from("leads" as never)
     .select(
-      "id, full_name, mobile_number, postal_code, status, routed_at, event_id, events!inner(name)",
+      `id, full_name, mobile_number, postal_code, status, routed_at, event_id,
+       events!inner(name, branches!inner(name))`,
     )
     .eq("routed_to_branch_id", auth.branch.id)
     .in("status", ["ROUTED", "ENGAGED"])
     .order("routed_at", { ascending: true });
   const leads = (leadRows as InboundLeadRow[] | null) ?? [];
+
+  // Bulk-resolve postal → constituency → district so each card can show
+  // "540102 · JALAN BESAR GRC · Central Singapore District" instead of a
+  // bare 6-digit. One round-trip total.
+  const postalSuggestions = await suggestBranchesForPostals(
+    leads.map((l) => l.postal_code),
+  );
 
   // Group rows by section status. Pre-build a map so we render in the
   // declared SECTIONS order regardless of DB ordering.
@@ -182,40 +202,37 @@ export default async function BranchInboxPage() {
           </div>
           <ul className="flex flex-col gap-3">
             {leads.map((lead) => {
-              const eventName = Array.isArray(lead.events)
-                ? lead.events[0]?.name ?? "Event"
-                : lead.events?.name ?? "Event";
-              const routedAgo = lead.routed_at
-                ? formatDistanceToNow(new Date(lead.routed_at), { addSuffix: true })
-                : "recently";
-              const isEngaged = lead.status === "ENGAGED";
+              // Defensively handle Supabase's relation shape — sometimes the
+              // joined relation is an object, sometimes an array of one.
+              const event = Array.isArray(lead.events)
+                ? lead.events[0]
+                : lead.events;
+              const eventName = event?.name ?? "Event";
+              const wingBranch = event
+                ? Array.isArray(event.branches)
+                  ? event.branches[0]
+                  : event.branches
+                : null;
+              const wingName = wingBranch?.name ?? "Wing";
+
+              const suggestion = lead.postal_code
+                ? postalSuggestions.get(lead.postal_code)
+                : null;
+
               return (
                 <li key={lead.id}>
-                  <Card>
-                    <CardContent className="flex flex-col gap-3 p-6 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="flex flex-col gap-1">
-                        <p className="text-base font-semibold text-text-primary">
-                          {lead.full_name}
-                        </p>
-                        <p className="text-sm text-text-muted">
-                          {eventName} · routed {routedAgo} ·{" "}
-                          {lead.mobile_number}
-                          {lead.postal_code ? ` · ${lead.postal_code}` : ""}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <MarkLeadEngagedButton
-                          leadId={lead.id}
-                          applicantName={lead.full_name}
-                          alreadyEngaged={isEngaged}
-                        />
-                        <ConvertLeadButton
-                          leadId={lead.id}
-                          applicantName={lead.full_name}
-                        />
-                      </div>
-                    </CardContent>
-                  </Card>
+                  <InboundLeadCard
+                    leadId={lead.id}
+                    applicantName={lead.full_name}
+                    mobileNumber={lead.mobile_number}
+                    postalCode={lead.postal_code}
+                    constituency={suggestion?.constituency ?? null}
+                    district={suggestion?.district ?? null}
+                    eventName={eventName}
+                    wingName={wingName}
+                    routedAt={lead.routed_at}
+                    status={lead.status}
+                  />
                 </li>
               );
             })}

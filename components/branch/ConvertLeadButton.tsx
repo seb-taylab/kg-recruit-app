@@ -17,9 +17,11 @@ import { convertLeadToApplicationAction } from "@/app/(dashboard)/branch/inbox/l
 interface ConvertLeadButtonProps {
   leadId: string;
   applicantName: string;
+  /** Optional className forwarded to Button — used for w-full on mobile. */
+  className?: string;
 }
 
-export function ConvertLeadButton({ leadId, applicantName }: ConvertLeadButtonProps) {
+export function ConvertLeadButton({ leadId, applicantName, className }: ConvertLeadButtonProps) {
   const [pending, setPending] = React.useState(false);
 
   async function handleClick() {
@@ -49,7 +51,13 @@ export function ConvertLeadButton({ leadId, applicantName }: ConvertLeadButtonPr
   }
 
   return (
-    <Button size="sm" type="button" onClick={handleClick} disabled={pending}>
+    <Button
+      size="sm"
+      type="button"
+      onClick={handleClick}
+      disabled={pending}
+      className={className}
+    >
       {pending ? "Sending…" : "Send invite"}
     </Button>
   );

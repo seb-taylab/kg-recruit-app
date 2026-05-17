@@ -22,12 +22,16 @@ interface MarkLeadEngagedButtonProps {
   leadId: string;
   applicantName: string;
   alreadyEngaged: boolean;
+  /** Optional className forwarded to the underlying Button — used by the
+   *  new InboundLeadCard to make the button fill its mobile column. */
+  className?: string;
 }
 
 export function MarkLeadEngagedButton({
   leadId,
   applicantName,
   alreadyEngaged,
+  className,
 }: MarkLeadEngagedButtonProps) {
   const router = useRouter();
   const [pending, setPending] = React.useState(false);
@@ -44,16 +48,20 @@ export function MarkLeadEngagedButton({
     }
   }
 
-  if (alreadyEngaged) {
-    return (
-      <span className="rounded-full border border-state-info px-3 py-1 text-xs font-medium text-state-info">
-        Engaged
-      </span>
-    );
-  }
+  // When the lead is already ENGAGED the card already renders the Engaged
+  // status pill at the top — surfacing a second "Engaged" chip here would
+  // be redundant. Return null so the parent layout collapses cleanly.
+  if (alreadyEngaged) return null;
 
   return (
-    <Button type="button" variant="outline" size="sm" disabled={pending} onClick={handleClick}>
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      disabled={pending}
+      onClick={handleClick}
+      className={className}
+    >
       {pending ? "Marking…" : "Mark engaged"}
     </Button>
   );
