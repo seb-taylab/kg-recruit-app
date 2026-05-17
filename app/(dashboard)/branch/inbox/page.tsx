@@ -8,6 +8,7 @@
  */
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { formatDistanceToNow } from "date-fns";
 import {
   Card,
   CardContent,
@@ -19,7 +20,20 @@ import { Button } from "@/components/ui/button";
 import { requireAuth } from "@/lib/auth/get-user";
 import { isBranchAdminTeam } from "@/types/database";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { formatDateDDMMMYYYY } from "@/lib/format/date";
+import { ConvertLeadButton } from "@/components/branch/ConvertLeadButton";
+
+interface InboundLeadRow {
+  id: string;
+  full_name: string;
+  mobile_number: string;
+  postal_code: string | null;
+  status: string;
+  routed_at: string | null;
+  event_id: string;
+  events: { name: string } | { name: string }[] | null;
+}
 
 interface AppRow {
   id: string;
@@ -115,6 +129,21 @@ export default async function BranchInboxPage() {
     .order("applicant_signed_at", { ascending: true });
   const all = (rows as (AppRow & { status: string })[] | null) ?? [];
 
+  // Inbound leads — wing-routed contacts awaiting our follow-up. Separate
+  // query because leads live in a different table from applications.
+  // Admin client because RLS for leads is policy-heavy and we've already
+  // gated this page on isBranchAdminTeam + auth.branch.id above.
+  const adminClient = createAdminClient();
+  const { data: leadRows } = await adminClient
+    .from("leads" as never)
+    .select(
+      "id, full_name, mobile_number, postal_code, status, routed_at, event_id, events!inner(name)",
+    )
+    .eq("routed_to_branch_id", auth.branch.id)
+    .in("status", ["ROUTED", "ENGAGED"])
+    .order("routed_at", { ascending: true });
+  const leads = (leadRows as InboundLeadRow[] | null) ?? [];
+
   // Group rows by section status. Pre-build a map so we render in the
   // declared SECTIONS order regardless of DB ordering.
   const byStatus = new Map<string, AppRow[]>();
@@ -123,19 +152,69 @@ export default async function BranchInboxPage() {
     byStatus.get(r.status)?.push(r);
   }
   const total = all.length;
+  const totalAll = total + leads.length;
 
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold leading-tight text-text-primary">Inbox</h1>
         <p className="text-text-secondary">
-          {total === 0
+          {totalAll === 0
             ? "Nothing waiting on you."
-            : `${total} application${total === 1 ? "" : "s"} need an action.`}
+            : `${totalAll} item${totalAll === 1 ? "" : "s"} need an action.`}
         </p>
       </header>
 
-      {total === 0 && (
+      {leads.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <div>
+            <h2 className="text-xl font-semibold text-text-primary">
+              Inbound leads{" "}
+              <span className="text-base font-normal text-text-muted">
+                ({leads.length})
+              </span>
+            </h2>
+            <p className="text-sm text-text-secondary">
+              Wing routed these to your branch. Send a membership invite to convert
+              the lead into an application.
+            </p>
+          </div>
+          <ul className="flex flex-col gap-3">
+            {leads.map((lead) => {
+              const eventName = Array.isArray(lead.events)
+                ? lead.events[0]?.name ?? "Event"
+                : lead.events?.name ?? "Event";
+              const routedAgo = lead.routed_at
+                ? formatDistanceToNow(new Date(lead.routed_at), { addSuffix: true })
+                : "recently";
+              return (
+                <li key={lead.id}>
+                  <Card>
+                    <CardContent className="flex flex-col gap-3 p-6 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex flex-col gap-1">
+                        <p className="text-base font-semibold text-text-primary">
+                          {lead.full_name}
+                        </p>
+                        <p className="text-sm text-text-muted">
+                          {eventName} · routed {routedAgo} ·{" "}
+                          {lead.mobile_number}
+                          {lead.postal_code ? ` · ${lead.postal_code}` : ""}
+                        </p>
+                      </div>
+                      <ConvertLeadButton
+                        leadId={lead.id}
+                        applicantName={lead.full_name}
+                      />
+                    </CardContent>
+                  </Card>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      {totalAll === 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Inbox zero</CardTitle>
