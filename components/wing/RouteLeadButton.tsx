@@ -42,17 +42,45 @@ interface RouteLeadButtonProps {
   leadId: string;
   applicantName: string;
   territorialBranches: TerritorialBranch[];
+  /** Sprint 5: ELD-derived constituency from the lead's postal code. */
+  suggestedConstituency?: string | null;
+  /** Sprint 5: branch IDs that match the suggested constituency. */
+  suggestedBranchIds?: string[];
 }
 
 export function RouteLeadButton({
   leadId,
   applicantName,
   territorialBranches,
+  suggestedConstituency = null,
+  suggestedBranchIds = [],
 }: RouteLeadButtonProps) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [targetId, setTargetId] = React.useState<string>("");
   const [pending, setPending] = React.useState(false);
+
+  // Pre-select the suggestion when there's exactly one match. Set on dialog
+  // open via onOpenChange (not inside useEffect — react-hooks lint forbids
+  // set-state-in-effect for derived defaults).
+  function handleOpenChange(next: boolean) {
+    setOpen(next);
+    if (next && targetId === "" && suggestedBranchIds.length === 1) {
+      setTargetId(suggestedBranchIds[0]);
+    }
+  }
+
+  const suggestedSet = new Set(suggestedBranchIds);
+  // Order suggestions first.
+  const ordered = territorialBranches
+    .slice()
+    .sort((a, b) =>
+      suggestedSet.has(a.id) === suggestedSet.has(b.id)
+        ? a.name.localeCompare(b.name)
+        : suggestedSet.has(a.id)
+          ? -1
+          : 1,
+    );
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -73,7 +101,7 @@ export function RouteLeadButton({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button size="sm" type="button">
           Route
@@ -89,14 +117,27 @@ export function RouteLeadButton({
             </DialogDescription>
           </DialogHeader>
 
+          {suggestedConstituency && (
+            <div className="my-4 rounded-md border border-border bg-surface-page p-3 text-sm">
+              <p className="text-text-muted">Suggested constituency (from postal code)</p>
+              <p className="font-medium text-text-primary">{suggestedConstituency}</p>
+              {suggestedBranchIds.length === 0 && (
+                <p className="mt-1 text-xs text-text-muted">
+                  No territorial branch matches this constituency — pick the closest fit.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="my-4 flex flex-col gap-2">
             <Select value={targetId} onValueChange={setTargetId}>
               <SelectTrigger>
                 <SelectValue placeholder="Pick a branch…" />
               </SelectTrigger>
               <SelectContent>
-                {territorialBranches.map((b) => (
+                {ordered.map((b) => (
                   <SelectItem key={b.id} value={b.id}>
+                    {suggestedSet.has(b.id) ? "★ " : ""}
                     {b.name}
                     {b.constituency ? ` · ${b.constituency}` : ""}
                   </SelectItem>

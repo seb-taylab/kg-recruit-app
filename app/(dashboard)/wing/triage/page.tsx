@@ -21,7 +21,9 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { requireAuth } from "@/lib/auth/get-user";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { RouteLeadButton } from "@/components/wing/RouteLeadButton";
+import { RerouteLeadButton } from "@/components/wing/RerouteLeadButton";
 import { isWingRole } from "@/types/database";
+import { suggestBranchesForPostals } from "@/lib/wing/postal-suggest";
 
 interface LeadRow {
   id: string;
@@ -32,6 +34,7 @@ interface LeadRow {
   captured_at: string;
   routed_at: string | null;
   routed_to_branch_id: string | null;
+  reroute_count: number;
   event_id: string;
   events: { name: string } | { name: string }[] | null;
   routed_to: { id: string; name: string } | { id: string; name: string }[] | null;
@@ -59,7 +62,7 @@ export default async function WingTriagePage() {
     .from("leads" as never)
     .select(
       `id, full_name, mobile_number, postal_code, status, captured_at,
-       routed_at, routed_to_branch_id, event_id,
+       routed_at, routed_to_branch_id, reroute_count, event_id,
        events!inner(name),
        routed_to:branches!leads_routed_to_branch_id_fkey(id, name)`,
     )
@@ -78,6 +81,12 @@ export default async function WingTriagePage() {
     .eq("is_active", true)
     .order("name");
   const territorialBranches = (branchRows as TerritorialBranch[] | null) ?? [];
+
+  // Sprint 5: postal-code → constituency → suggested-branch lookup. One
+  // round-trip for all visible leads. Lets the Route + Reroute dialogs
+  // pre-highlight the right branch instead of forcing the admin to scan
+  // a flat list of every territorial branch.
+  const postalSuggestions = await suggestBranchesForPostals(leads.map((l) => l.postal_code));
 
   const newLeads = leads.filter((l) => l.status === "CAPTURED");
   const routedLeads = leads.filter((l) => l.status === "ROUTED" || l.status === "ENGAGED");
@@ -109,21 +118,28 @@ export default async function WingTriagePage() {
             New — needs routing
           </h2>
           <div className="flex flex-col gap-2">
-            {newLeads.map((lead) => (
-              <LeadCard
-                key={lead.id}
-                lead={lead}
-                renderAction={
-                  auth.profile.role === "wing_admin" ? (
-                    <RouteLeadButton
-                      leadId={lead.id}
-                      applicantName={lead.full_name}
-                      territorialBranches={territorialBranches}
-                    />
-                  ) : null
-                }
-              />
-            ))}
+            {newLeads.map((lead) => {
+              const suggestion = lead.postal_code
+                ? postalSuggestions.get(lead.postal_code)
+                : null;
+              return (
+                <LeadCard
+                  key={lead.id}
+                  lead={lead}
+                  renderAction={
+                    auth.profile.role === "wing_admin" ? (
+                      <RouteLeadButton
+                        leadId={lead.id}
+                        applicantName={lead.full_name}
+                        territorialBranches={territorialBranches}
+                        suggestedConstituency={suggestion?.constituency ?? null}
+                        suggestedBranchIds={suggestion?.suggestedBranchIds ?? []}
+                      />
+                    ) : null
+                  }
+                />
+              );
+            })}
           </div>
         </section>
       )}
@@ -134,9 +150,36 @@ export default async function WingTriagePage() {
             Routed — awaiting branch follow-up
           </h2>
           <div className="flex flex-col gap-2">
-            {routedLeads.map((lead) => (
-              <LeadCard key={lead.id} lead={lead} renderAction={null} />
-            ))}
+            {routedLeads.map((lead) => {
+              const suggestion = lead.postal_code
+                ? postalSuggestions.get(lead.postal_code)
+                : null;
+              const currentBranch = Array.isArray(lead.routed_to)
+                ? lead.routed_to[0]
+                : lead.routed_to;
+              return (
+                <LeadCard
+                  key={lead.id}
+                  lead={lead}
+                  renderAction={
+                    auth.profile.role === "wing_admin" &&
+                    lead.routed_to_branch_id &&
+                    currentBranch ? (
+                      <RerouteLeadButton
+                        leadId={lead.id}
+                        applicantName={lead.full_name}
+                        currentBranchId={lead.routed_to_branch_id}
+                        currentBranchName={currentBranch.name}
+                        territorialBranches={territorialBranches}
+                        suggestedConstituency={suggestion?.constituency ?? null}
+                        suggestedBranchIds={suggestion?.suggestedBranchIds ?? []}
+                        rerouteCount={lead.reroute_count}
+                      />
+                    ) : null
+                  }
+                />
+              );
+            })}
           </div>
         </section>
       )}
@@ -184,6 +227,9 @@ function LeadCard({
               {eventName} · captured {capturedAgo}
               {lead.postal_code ? ` · ${lead.postal_code}` : ""}
               {routedBranch ? ` · routed to ${routedBranch.name}` : ""}
+              {lead.reroute_count > 0
+                ? ` · rerouted ${lead.reroute_count}×`
+                : ""}
             </CardDescription>
           </div>
           <div className="flex items-center gap-3">

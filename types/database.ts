@@ -121,6 +121,34 @@ export interface Lead {
   archived_at: string | null;
   archived_by_user_id: string | null;
   archive_reason: string | null;
+  /** 0 on initial route; +1 per reroute. Added in Sprint 5. */
+  reroute_count: number;
+}
+
+/**
+ * Reasons a wing admin can attach to a routing decision. 'initial_route'
+ * is reserved for the first route (auto-assigned by routeLeadAction); the
+ * others are reroute reasons.
+ */
+export type LeadRouteReason =
+  | "initial_route"
+  | "no_engagement"
+  | "branch_declined"
+  | "applicant_request"
+  | "wing_judgment"
+  | "other";
+
+export interface LeadRouteHistory {
+  id: string;
+  lead_id: string;
+  wing_branch_id: string;
+  /** NULL on initial route; required on every reroute (enforced by trigger). */
+  from_branch_id: string | null;
+  to_branch_id: string;
+  reason: LeadRouteReason;
+  reason_note: string | null;
+  routed_by_user_id: string;
+  routed_at: string;
 }
 
 export interface Database {
@@ -155,6 +183,18 @@ export interface Database {
           consent_text_version: string;
         };
         Update: Partial<Lead>;
+        Relationships: [];
+      };
+      lead_route_history: {
+        Row: LeadRouteHistory;
+        Insert: Partial<LeadRouteHistory> & {
+          lead_id: string;
+          wing_branch_id: string;
+          to_branch_id: string;
+          reason: LeadRouteReason;
+          routed_by_user_id: string;
+        };
+        Update: Partial<LeadRouteHistory>;
         Relationships: [];
       };
       applications: {

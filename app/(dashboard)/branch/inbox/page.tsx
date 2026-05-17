@@ -23,6 +23,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatDateDDMMMYYYY } from "@/lib/format/date";
 import { ConvertLeadButton } from "@/components/branch/ConvertLeadButton";
+import { MarkLeadEngagedButton } from "@/components/branch/MarkLeadEngagedButton";
 
 interface InboundLeadRow {
   id: string;
@@ -187,6 +188,7 @@ export default async function BranchInboxPage() {
               const routedAgo = lead.routed_at
                 ? formatDistanceToNow(new Date(lead.routed_at), { addSuffix: true })
                 : "recently";
+              const isEngaged = lead.status === "ENGAGED";
               return (
                 <li key={lead.id}>
                   <Card>
@@ -201,10 +203,17 @@ export default async function BranchInboxPage() {
                           {lead.postal_code ? ` · ${lead.postal_code}` : ""}
                         </p>
                       </div>
-                      <ConvertLeadButton
-                        leadId={lead.id}
-                        applicantName={lead.full_name}
-                      />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <MarkLeadEngagedButton
+                          leadId={lead.id}
+                          applicantName={lead.full_name}
+                          alreadyEngaged={isEngaged}
+                        />
+                        <ConvertLeadButton
+                          leadId={lead.id}
+                          applicantName={lead.full_name}
+                        />
+                      </div>
                     </CardContent>
                   </Card>
                 </li>

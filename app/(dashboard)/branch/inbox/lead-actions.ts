@@ -29,6 +29,11 @@ import { writeAuditLog, writeApplicationEvent } from "@/lib/audit/log";
 import { setShareTokenCookie } from "@/lib/auth/share-token-cookie";
 import { isBranchAdminTeam } from "@/types/database";
 
+export interface ActionResult {
+  ok: boolean;
+  error?: string;
+}
+
 const convertSchema = z.object({ leadId: z.string().uuid() });
 
 export interface ConvertResult {
@@ -202,4 +207,66 @@ export async function convertLeadToApplicationAction(
 
   // redirect() throws; nothing after this runs.
   redirect(`/branch/applications/${applicationId}`);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Mark engaged (Sprint 5) — branch admin flags "we're in touch with this
+// person but haven't sent the membership invite yet." Transitions
+// ROUTED → ENGAGED, which buys the branch more time before the wing
+// considers rerouting. Idempotent — re-engaging an already-ENGAGED
+// lead is a no-op.
+
+const markEngagedSchema = z.object({ leadId: z.string().uuid() });
+
+export async function markLeadEngagedAction(
+  input: z.input<typeof markEngagedSchema>,
+): Promise<ActionResult> {
+  const parsed = markEngagedSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Bad input." };
+
+  const auth = await requireAuth();
+  if (!auth.activeBranch || !isBranchAdminTeam(auth.activeProfile.role)) {
+    return { ok: false, error: "Branch admin team only." };
+  }
+
+  const admin = createAdminClient();
+
+  const { data: leadRow } = await admin
+    .from("leads" as never)
+    .select("id, routed_to_branch_id, status")
+    .eq("id", parsed.data.leadId)
+    .single();
+  const lead = leadRow as
+    | { id: string; routed_to_branch_id: string | null; status: string }
+    | null;
+  if (!lead) return { ok: false, error: "Lead not found." };
+  if (lead.routed_to_branch_id !== auth.activeBranch.id) {
+    return { ok: false, error: "This lead isn't routed to your branch." };
+  }
+  if (lead.status === "ENGAGED") return { ok: true }; // idempotent
+  if (lead.status !== "ROUTED") {
+    return {
+      ok: false,
+      error: `Lead is ${lead.status.toLowerCase()} — can't mark engaged.`,
+    };
+  }
+
+  const { error: updErr } = await admin
+    .from("leads" as never)
+    .update({ status: "ENGAGED" } as never)
+    .eq("id", lead.id);
+  if (updErr) return { ok: false, error: updErr.message };
+
+  await writeAuditLog({
+    action: "LEAD_ENGAGED",
+    branchId: auth.activeBranch.id,
+    actorId: auth.userId,
+    actorEmail: auth.email,
+    actorRole: auth.activeProfile.role,
+    metadata: { lead_id: lead.id },
+  });
+
+  revalidatePath("/branch/inbox");
+  revalidatePath("/wing/triage");
+  return { ok: true };
 }
