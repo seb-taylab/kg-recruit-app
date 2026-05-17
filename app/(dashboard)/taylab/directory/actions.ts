@@ -21,7 +21,7 @@ export interface ActionResult {
 const updateSchema = z.object({
   constituency: z.string().trim().min(2).max(100),
   district: z
-    .enum(["Central", "East Coast", "North East", "North West", "West Coast"])
+    .enum(["Central Singapore", "North East", "North West", "South East", "South West"])
     .nullable(),
   verificationStatus: z.enum(["seed", "verified", "manual"]).optional(),
 });
@@ -79,7 +79,7 @@ const createSchema = z.object({
     .regex(/^[A-Z0-9 \-,'.]+$/, "Use uppercase letters, digits, hyphens, commas, periods"),
   constituency_type: z.enum(["GRC", "SMC"]),
   district: z
-    .enum(["Central", "East Coast", "North East", "North West", "West Coast"])
+    .enum(["Central Singapore", "North East", "North West", "South East", "South West"])
     .nullable(),
 });
 

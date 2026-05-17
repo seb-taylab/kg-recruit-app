@@ -152,17 +152,19 @@ export interface LeadRouteHistory {
 }
 
 /**
- * Singapore PAP organizational district. Five values, mapped per
- * GE2025 + PAP's district map. Constituencies belong to districts via
+ * Singapore PAP organizational district — uses the five CDC names as the
+ * canonical district layer. Mapping authoritative per Sebastian's
+ * sg_grc_smc_cdc_mapping_2025.md (May 2025, post-GE2025 + post-23 May 2025
+ * mayoral appointments). Constituencies belong to districts via
  * constituency_directory; branches belong to constituencies via
  * branches.constituency.
  */
 export type PapDistrict =
-  | "Central"
-  | "East Coast"
+  | "Central Singapore"
   | "North East"
   | "North West"
-  | "West Coast";
+  | "South East"
+  | "South West";
 
 export interface ConstituencyDirectoryEntry {
   constituency: string;

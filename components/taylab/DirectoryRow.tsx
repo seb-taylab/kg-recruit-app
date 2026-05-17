@@ -25,16 +25,22 @@ import { updateConstituencyDirectoryAction } from "@/app/(dashboard)/taylab/dire
 interface DirectoryRowProps {
   constituency: string;
   constituency_type: "GRC" | "SMC";
-  district: "Central" | "East Coast" | "North East" | "North West" | "West Coast" | null;
+  district:
+    | "Central Singapore"
+    | "North East"
+    | "North West"
+    | "South East"
+    | "South West"
+    | null;
   verification_status: "seed" | "verified" | "manual";
 }
 
 const DISTRICTS = [
-  "Central",
-  "East Coast",
+  "Central Singapore",
   "North East",
   "North West",
-  "West Coast",
+  "South East",
+  "South West",
 ] as const;
 
 const NULL_VALUE = "__null__";
@@ -57,7 +63,12 @@ export function DirectoryRow({
       district:
         value === NULL_VALUE
           ? null
-          : (value as "Central" | "East Coast" | "North East" | "North West" | "West Coast"),
+          : (value as
+              | "Central Singapore"
+              | "North East"
+              | "North West"
+              | "South East"
+              | "South West"),
     });
     setPending(false);
     if (result.ok) {
