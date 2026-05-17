@@ -16,14 +16,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { getAuthContext } from "@/lib/auth/get-user";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { CaptureForm } from "@/components/wing/CaptureForm";
-import { CAPTURE_CONSENT_VERSION } from "./actions";
-
-// Re-using the consent draft from the Chairman brief (slightly tightened
-// for booth context: 30-day retention, branch sharing, withdrawal note).
-// IMPORTANT: any change to this text must bump CAPTURE_CONSENT_VERSION
-// in actions.ts so we can audit which version each lead saw.
-const CONSENT_TEXT =
-  "By providing my details, I consent to PAP contacting me about Party membership in the next 30 days. My details may be shared with the PAP branch in my constituency for direct follow-up. If I don't proceed with a full membership application within 30 days, my details will be deleted. I can withdraw consent any time by contacting the branch.";
+import { CAPTURE_CONSENT_VERSION, CAPTURE_CONSENT_TEXT } from "./consent";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -94,7 +87,7 @@ export default async function CapturePage({ params }: PageProps) {
             eventSlug={slug}
             eventName={event.name}
             branchName={branchName}
-            consentText={CONSENT_TEXT}
+            consentText={CAPTURE_CONSENT_TEXT}
           />
         </CardContent>
       </Card>

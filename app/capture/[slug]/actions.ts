@@ -17,8 +17,10 @@ import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/lib/auth/get-user";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { writeAuditLog } from "@/lib/audit/log";
-
-export const CAPTURE_CONSENT_VERSION = "v1-2026-05-17";
+// Constants live in their own file because Next.js Turbopack rejects
+// non-async value exports from "use server" files. Type-only exports
+// (interface, type) are fine because they erase at runtime.
+import { CAPTURE_CONSENT_VERSION } from "./consent";
 
 export interface CaptureResult {
   ok: boolean;
