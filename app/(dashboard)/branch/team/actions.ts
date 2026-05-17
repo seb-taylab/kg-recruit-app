@@ -75,28 +75,52 @@ export async function inviteUserAction(
 
   const admin = createAdminClient();
 
-  // Idempotent: if the email already exists, point the caller to the right
-  // path (don't silently re-invite).
+  // Multi-profile model: an existing auth user CAN be invited as a team
+  // member of THIS branch — they just get a new profile row in this branch.
+  // Pre-multi-profile this was rejected outright.
   const { data: existingList } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
-  const existing = existingList?.users?.find(
+  const existingUser = existingList?.users?.find(
     (u) => u.email?.toLowerCase() === email.toLowerCase(),
   );
-  if (existing) {
-    return {
-      ok: false,
-      error: "An account with this email already exists. Reactivate them from the list instead.",
-    };
+
+  let targetUserId: string;
+  let sentInvite = false;
+
+  if (existingUser) {
+    targetUserId = existingUser.id;
+
+    // Guard: do they ALREADY have an active profile for this branch?
+    // The partial unique index would reject too, but a friendly error is
+    // better than the SQL bubble-up.
+    const { data: existingProfile } = await admin
+      .from("profiles" as never)
+      .select("id, role")
+      .eq("user_id", targetUserId)
+      .eq("branch_id", auth.branch.id)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (existingProfile) {
+      const cur = existingProfile as { id: string; role: string };
+      return {
+        ok: false,
+        error: `That account is already a ${cur.role.replace(/_/g, " ")} of this branch.`,
+      };
+    }
+  } else {
+    const { data: invite, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
+      data: { full_name: fullName },
+    });
+    if (inviteErr || !invite?.user) {
+      return { ok: false, error: inviteErr?.message ?? "Couldn't send the invite." };
+    }
+    targetUserId = invite.user.id;
+    sentInvite = true;
   }
 
-  const { data: invite, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
-    data: { full_name: fullName },
-  });
-  if (inviteErr || !invite?.user) {
-    return { ok: false, error: inviteErr?.message ?? "Couldn't send the invite." };
-  }
-
+  // Insert profile — gen_random_uuid() default supplies id; only user_id +
+  // role + branch + metadata needed.
   const { error: profErr } = await admin.from("profiles" as never).insert({
-    id: invite.user.id,
+    user_id: targetUserId,
     full_name: fullName,
     role,
     branch_id: auth.branch.id,
@@ -105,8 +129,11 @@ export async function inviteUserAction(
     created_by_id: auth.userId,
   } as never);
   if (profErr) {
-    // Roll back the auth user so the next invite attempt is clean.
-    await admin.auth.admin.deleteUser(invite.user.id).catch(() => undefined);
+    // Only delete the auth user if WE created it just now. Don't strand
+    // existing users.
+    if (sentInvite) {
+      await admin.auth.admin.deleteUser(targetUserId).catch(() => undefined);
+    }
     return { ok: false, error: "Couldn't save the profile." };
   }
 
@@ -116,7 +143,12 @@ export async function inviteUserAction(
     actorId: auth.userId,
     actorEmail: auth.email,
     actorRole: auth.profile.role,
-    metadata: { invited_email: email, invited_role: role, invited_name: fullName },
+    metadata: {
+      invited_email: email,
+      invited_role: role,
+      invited_name: fullName,
+      existing_user_added: !sentInvite,
+    },
   });
 
   revalidatePath("/branch/team");
