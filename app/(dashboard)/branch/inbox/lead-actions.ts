@@ -270,3 +270,131 @@ export async function markLeadEngagedAction(
   revalidatePath("/wing/triage");
   return { ok: true };
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Return to wing (Sprint 6) — branch admin pushes a lead back to the wing
+// when it isn't the right fit (wrong constituency, already a member,
+// applicant doesn't reside here, etc.). The lead's status flips back to
+// CAPTURED and routed_to_branch_id is cleared, so it reappears in the
+// wing's triage "New" queue.
+//
+// Schema-wise this reuses lead_route_history with reason='branch_declined'
+// — the specific reason text is captured in reason_note. No schema change.
+
+const RETURN_REASONS = [
+  "wrong_constituency",
+  "already_member",
+  "not_residing_here",
+  "applicant_request",
+  "quality_concern",
+  "other",
+] as const;
+
+const returnSchema = z.object({
+  leadId: z.string().uuid(),
+  reason: z.enum(RETURN_REASONS),
+  reasonNote: z.string().trim().max(500).optional().or(z.literal("")),
+});
+
+export async function returnLeadToWingAction(
+  input: z.input<typeof returnSchema>,
+): Promise<ActionResult> {
+  const parsed = returnSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Bad input." };
+  }
+  const { leadId, reason, reasonNote } = parsed.data;
+
+  const auth = await requireAuth();
+  if (!auth.activeBranch || !isBranchAdminTeam(auth.activeProfile.role)) {
+    return { ok: false, error: "Branch admin team only." };
+  }
+
+  const admin = createAdminClient();
+
+  const { data: leadRow } = await admin
+    .from("leads" as never)
+    .select("id, wing_branch_id, routed_to_branch_id, status")
+    .eq("id", leadId)
+    .single();
+  const lead = leadRow as
+    | {
+        id: string;
+        wing_branch_id: string;
+        routed_to_branch_id: string | null;
+        status: string;
+      }
+    | null;
+  if (!lead) return { ok: false, error: "Lead not found." };
+  if (lead.routed_to_branch_id !== auth.activeBranch.id) {
+    return { ok: false, error: "This lead isn't routed to your branch." };
+  }
+  if (lead.status === "CONVERTED") {
+    return { ok: false, error: "Converted leads can't be returned." };
+  }
+  if (lead.status === "ARCHIVED") {
+    return { ok: false, error: "Archived leads can't be returned." };
+  }
+
+  // Flip back: status → CAPTURED, clear routing fields so the lead surfaces
+  // in the wing's "New" queue. reroute_count stays as-is (incremented later
+  // by the wing if they re-route to a different branch).
+  const { error: updErr } = await admin
+    .from("leads" as never)
+    .update({
+      status: "CAPTURED",
+      routed_to_branch_id: null,
+      routed_at: null,
+      routed_by_user_id: null,
+    } as never)
+    .eq("id", lead.id);
+  if (updErr) return { ok: false, error: updErr.message };
+
+  // History row — captures who returned, when, why. to_branch_id is the
+  // wing because the lead is now back in the wing's queue. The trigger
+  // permits this (no territorial constraint on history.to_branch_id,
+  // only on leads.routed_to_branch_id).
+  const composedNote = [
+    `Reason: ${reason.replace(/_/g, " ")}`,
+    reasonNote && reasonNote.trim().length > 0 ? reasonNote.trim() : null,
+  ]
+    .filter(Boolean)
+    .join(" — ")
+    .slice(0, 500);
+
+  const { error: histErr } = await admin
+    .from("lead_route_history" as never)
+    .insert({
+      lead_id: lead.id,
+      wing_branch_id: lead.wing_branch_id,
+      from_branch_id: auth.activeBranch.id,
+      to_branch_id: lead.wing_branch_id,
+      reason: "branch_declined",
+      reason_note: composedNote,
+      routed_by_user_id: auth.userId,
+    } as never);
+  if (histErr) {
+    // Don't roll back the lead status — history is audit, not critical
+    // path. Log and surface a soft warning.
+    console.error("[returnLeadToWingAction] history insert failed:", histErr.message);
+  }
+
+  await writeAuditLog({
+    action: "LEAD_RETURNED",
+    branchId: auth.activeBranch.id,
+    actorId: auth.userId,
+    actorEmail: auth.email,
+    actorRole: auth.activeProfile.role,
+    metadata: {
+      lead_id: lead.id,
+      wing_branch_id: lead.wing_branch_id,
+      reason,
+      had_note: Boolean(reasonNote && reasonNote.trim().length > 0),
+      previous_status: lead.status,
+    },
+  });
+
+  revalidatePath("/branch/inbox");
+  revalidatePath("/wing/triage");
+  return { ok: true };
+}

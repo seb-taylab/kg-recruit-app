@@ -94,7 +94,8 @@ export type AuditAction =
   | "LEAD_ROUTED"
   | "LEAD_ENGAGED"
   | "LEAD_CONVERTED"
-  | "LEAD_ARCHIVED";
+  | "LEAD_ARCHIVED"
+  | "LEAD_RETURNED";
 
 export interface AuditEntry {
   action: AuditAction;
