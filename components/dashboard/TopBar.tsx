@@ -20,6 +20,8 @@ const ROLE_LABEL: Record<UserRole, string> = {
   branch_admin: "Admin",
   branch_team_member: "Team Member",
   branch_chairman: "Chairman",
+  wing_admin: "Wing Admin",
+  wing_chairman: "Wing Chairman",
   taylab_staff: "Taylab Staff",
 };
 

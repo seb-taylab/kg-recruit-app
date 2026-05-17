@@ -9,9 +9,22 @@ export type UserRole =
   | "branch_admin"
   | "branch_team_member"
   | "branch_chairman"
+  | "wing_admin"
+  | "wing_chairman"
   | "taylab_staff";
 
 export type RoutingMode = "direct_to_chairman" | "via_branch_admin_review";
+
+/**
+ * Branch taxonomy (added in 20260517000001_wing_events_primitive.sql).
+ *   territorial = constituency branch (KG, Tampines, etc.) — the existing
+ *                 default; runs its own pipeline, can receive routed leads.
+ *   wing        = parent layer (Young PAP, Women's Wing, etc.) — runs events
+ *                 and routes leads to territorial branches.
+ * A DB trigger enforces that wings cannot have a parent_wing_id and that
+ * parent_wing_id (when set) points to a branch with branch_type = 'wing'.
+ */
+export type BranchType = "territorial" | "wing";
 
 export interface Profile {
   id: string;
@@ -41,6 +54,29 @@ export interface Branch {
   nudge_config: Record<string, unknown> | null;
   is_active: boolean;
   created_at: string;
+  /** territorial | wing — see BranchType. Defaults to 'territorial'. */
+  branch_type: BranchType;
+  /**
+   * For territorial branches only: optional FK to the wing they affiliate with.
+   * Wings themselves always have NULL (single-level hierarchy enforced by DB trigger).
+   */
+  parent_wing_id: string | null;
+}
+
+/**
+ * Events — wing-organised gatherings that generate inbound leads (Sprint 2+).
+ * Belongs to a wing branch; DB trigger rejects events with a territorial branch_id.
+ */
+export interface Event {
+  id: string;
+  branch_id: string;
+  name: string;
+  slug: string;
+  event_date: string | null;
+  location: string | null;
+  is_active: boolean;
+  created_at: string;
+  created_by_id: string | null;
 }
 
 export interface Database {
@@ -56,6 +92,12 @@ export interface Database {
         Row: Branch;
         Insert: Partial<Branch> & { name: string };
         Update: Partial<Branch>;
+        Relationships: [];
+      };
+      events: {
+        Row: Event;
+        Insert: Partial<Event> & { branch_id: string; name: string; slug: string };
+        Update: Partial<Event>;
         Relationships: [];
       };
       applications: {
@@ -94,10 +136,19 @@ export const BRANCH_ADMIN_TEAM_ROLES = [
   "branch_team_member",
 ] as const satisfies readonly UserRole[];
 
+export const WING_ROLES = [
+  "wing_admin",
+  "wing_chairman",
+] as const satisfies readonly UserRole[];
+
 export function isBranchRole(r: UserRole): boolean {
   return (BRANCH_ROLES as readonly string[]).includes(r);
 }
 
 export function isBranchAdminTeam(r: UserRole): boolean {
   return (BRANCH_ADMIN_TEAM_ROLES as readonly string[]).includes(r);
+}
+
+export function isWingRole(r: UserRole): boolean {
+  return (WING_ROLES as readonly string[]).includes(r);
 }
