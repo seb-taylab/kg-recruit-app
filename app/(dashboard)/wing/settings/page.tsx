@@ -5,7 +5,6 @@
  * the editor surface. Wing details stay read-only for now (rename action
  * would need a wing-admin RLS branch on branches.update — separate work).
  */
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
 import {
@@ -15,7 +14,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { CalendarDays, Users, Flame } from "lucide-react";
 import { requireAuth } from "@/lib/auth/get-user";
 import { isWingRole } from "@/types/database";
 import { getWingObservationPrefs } from "@/lib/wing/observation-prefs";
@@ -45,29 +43,6 @@ export default async function WingSettingsPage() {
           Wing-level configuration for {auth.activeBranch.name}.
         </p>
       </header>
-
-      {/* Quick links to the rest of the wing workspace. Useful because
-          Settings is otherwise an island. */}
-      <section className="grid gap-3 sm:grid-cols-3">
-        <QuickLink
-          href="/wing/triage"
-          icon={Flame}
-          label="Triage"
-          hint="Hot leads, routing decisions"
-        />
-        <QuickLink
-          href="/wing/events"
-          icon={CalendarDays}
-          label="Events"
-          hint="Capture URLs + per-event counts"
-        />
-        <QuickLink
-          href="/wing/team"
-          icon={Users}
-          label="Team"
-          hint="Invite admins, manage access"
-        />
-      </section>
 
       {/* Wing details — read-only. Constituency is omitted for wings
           because the field is meaningful only for territorial branches. */}
@@ -127,30 +102,5 @@ export default async function WingSettingsPage() {
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-function QuickLink({
-  href,
-  icon: Icon,
-  label,
-  hint,
-}: {
-  href: string;
-  icon: React.ComponentType<{ className?: string; strokeWidth?: number; "aria-hidden"?: boolean }>;
-  label: string;
-  hint: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="flex items-start gap-3 rounded-md border border-border bg-surface-card p-4 transition-colors hover:bg-surface-page"
-    >
-      <Icon className="h-5 w-5 shrink-0 text-text-secondary" strokeWidth={1.5} aria-hidden />
-      <div className="flex flex-col">
-        <span className="text-sm font-semibold text-text-primary">{label}</span>
-        <span className="text-xs text-text-muted">{hint}</span>
-      </div>
-    </Link>
   );
 }
