@@ -151,6 +151,23 @@ export interface LeadRouteHistory {
   routed_at: string;
 }
 
+/**
+ * Per-wing thresholds for triage scoring + reroute / cold-path policy.
+ * One row per wing branch; absence implies the defaults baked into the
+ * DB check constraints (2/5/7/14/30 day buckets, saturation 10).
+ */
+export interface WingObservationPreferences {
+  wing_branch_id: string;
+  ack_attention_days: number;
+  engagement_attention_days: number;
+  form_sent_attention_days: number;
+  lead_aging_days: number;
+  lead_cold_days: number;
+  branch_saturation_threshold: number;
+  updated_at: string;
+  updated_by_user_id: string | null;
+}
+
 export interface Database {
   public: {
     Tables: {
