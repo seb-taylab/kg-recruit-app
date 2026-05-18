@@ -86,6 +86,11 @@ export default async function HistoryPage({
   const { tab: rawTab } = await searchParams;
   const tab: Tab = (rawTab as Tab) in TAB_TO_STATUSES ? (rawTab as Tab) : "all";
 
+  // Hard ceiling on what's rendered in one shot. Closed/Archived rows
+  // accumulate forever — without a limit, a branch with thousands of
+  // historical applications pulls them all on every visit. PAGE_SIZE+1
+  // is the "is there more?" probe (cheap pagination signal).
+  const PAGE_SIZE = 200;
   const supabase = await createClient();
   const { data: rows } = await supabase
     .from("applications")
@@ -95,8 +100,11 @@ export default async function HistoryPage({
     .in("status", TAB_TO_STATUSES[tab])
     // Newest first — denormalised activity_at would be cleaner; for now
     // any of the per-status timestamps work as a proxy.
-    .order("completed_at", { ascending: false, nullsFirst: false });
-  const apps = (rows as AppRow[] | null) ?? [];
+    .order("completed_at", { ascending: false, nullsFirst: false })
+    .limit(PAGE_SIZE + 1);
+  const allRows = (rows as AppRow[] | null) ?? [];
+  const hasMore = allRows.length > PAGE_SIZE;
+  const apps = hasMore ? allRows.slice(0, PAGE_SIZE) : allRows;
 
   return (
     <div className="flex flex-col gap-6">
@@ -203,6 +211,13 @@ export default async function HistoryPage({
             );
           })}
         </ul>
+      )}
+
+      {hasMore && (
+        <p className="text-sm text-text-muted">
+          Showing the most recent {PAGE_SIZE}. Older rows aren&rsquo;t loaded —
+          ask Taylab for an export if you need the full archive.
+        </p>
       )}
     </div>
   );

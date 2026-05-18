@@ -127,6 +127,8 @@ export default async function ReadyToSendDetailPage({
                 alt="Applicant photo"
                 width={168}
                 height={216}
+                loading="lazy"
+                decoding="async"
                 className="h-auto w-24 rounded-md border border-border"
               />
             </div>

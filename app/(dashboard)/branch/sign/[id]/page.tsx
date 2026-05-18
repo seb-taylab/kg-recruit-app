@@ -322,6 +322,7 @@ export default async function ChairmanSignDetailPage({
               alt={`Photo of ${applicantDisplay}`}
               width={160}
               height={206}
+              decoding="async"
               className="h-auto w-40 shrink-0 rounded-md border border-border object-cover"
             />
           ) : (
@@ -531,6 +532,8 @@ export default async function ChairmanSignDetailPage({
                   alt={`${s.role} signature`}
                   width={320}
                   height={80}
+                  loading="lazy"
+                  decoding="async"
                   className="h-auto w-full max-w-md rounded-md border border-border bg-surface-card"
                 />
               )}

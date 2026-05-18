@@ -125,18 +125,11 @@ export default async function BranchInboxPage() {
   }
 
   const supabase = await createClient();
-  const { data: rows } = await supabase
-    .from("applications")
-    .select(
-      "id, status, applicant_name_at_invite, surname, given_names, applicant_signed_at, ready_to_send_at, sent_to_hq_at, chairman_name_on_form",
-    )
-    .in(
-      "status",
-      SECTIONS.map((s) => s.status),
-    )
-    .order("applicant_signed_at", { ascending: true });
-  const all = (rows as (AppRow & { status: string })[] | null) ?? [];
+  const adminClient = createAdminClient();
 
+  // Applications + leads are independent — run them in parallel. Postal
+  // suggestions depend on the leads result, so it stays sequential after.
+  //
   // Inbound leads — wing-routed contacts awaiting our follow-up. Separate
   // query because leads live in a different table from applications.
   // Admin client because RLS for leads is policy-heavy and we've already
@@ -146,16 +139,28 @@ export default async function BranchInboxPage() {
   //   events     — for the event name shown in card provenance
   //   branches   — through events.branch_id to surface the WING name
   //                ("Routed by Young PAP"). Multi-wing ready.
-  const adminClient = createAdminClient();
-  const { data: leadRows } = await adminClient
-    .from("leads" as never)
-    .select(
-      `id, full_name, mobile_number, postal_code, status, routed_at, event_id,
-       events!inner(name, branches!inner(name))`,
-    )
-    .eq("routed_to_branch_id", auth.branch.id)
-    .in("status", ["ROUTED", "ENGAGED"])
-    .order("routed_at", { ascending: true });
+  const [{ data: rows }, { data: leadRows }] = await Promise.all([
+    supabase
+      .from("applications")
+      .select(
+        "id, status, applicant_name_at_invite, surname, given_names, applicant_signed_at, ready_to_send_at, sent_to_hq_at, chairman_name_on_form",
+      )
+      .in(
+        "status",
+        SECTIONS.map((s) => s.status),
+      )
+      .order("applicant_signed_at", { ascending: true }),
+    adminClient
+      .from("leads" as never)
+      .select(
+        `id, full_name, mobile_number, postal_code, status, routed_at, event_id,
+         events!inner(name, branches!inner(name))`,
+      )
+      .eq("routed_to_branch_id", auth.branch.id)
+      .in("status", ["ROUTED", "ENGAGED"])
+      .order("routed_at", { ascending: true }),
+  ]);
+  const all = (rows as (AppRow & { status: string })[] | null) ?? [];
   const leads = (leadRows as InboundLeadRow[] | null) ?? [];
 
   // Bulk-resolve postal → constituency → district so each card can show

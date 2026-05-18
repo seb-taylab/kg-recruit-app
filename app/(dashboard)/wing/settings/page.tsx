@@ -35,11 +35,12 @@ export default async function WingSettingsPage() {
     redirect("/wing");
   }
 
-  const prefs = await getWingObservationPrefs(auth.activeBranch.id);
-
-  // WhatsApp community links + constituency choices for the editor.
+  // prefs + WhatsApp links + constituency directory are all independent
+  // server fetches — flatten into a single outer Promise.all so TTFB is
+  // limited by the slowest, not the sum.
   const admin = createAdminClient();
-  const [{ data: linkRows }, { data: dirRows }] = await Promise.all([
+  const [prefs, { data: linkRows }, { data: dirRows }] = await Promise.all([
+    getWingObservationPrefs(auth.activeBranch.id),
     admin
       .from("wing_whatsapp_links" as never)
       .select(

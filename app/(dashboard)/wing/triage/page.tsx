@@ -109,28 +109,33 @@ export default async function WingTriagePage() {
   }
 
   const admin = createAdminClient();
-  const { data: rows } = await admin
-    .from("leads" as never)
-    .select(
-      `id, full_name, mobile_number, postal_code, status, captured_at,
-       routed_at, routed_to_branch_id, reroute_count, event_id,
-       events!inner(name),
-       routed_to:branches!leads_routed_to_branch_id_fkey(id, name)`,
-    )
-    .eq("wing_branch_id", auth.branch.id)
-    .order("captured_at", { ascending: false })
-    .limit(200);
-  const leads = (rows as LeadRow[] | null) ?? [];
 
+  // Leads + territorial branches are independent — parallelize. History +
+  // postal suggestions depend on leadIds, so they stay sequential below.
+  //
   // Territorial branches for the route picker. Wing admins need to see ALL
   // territorial branches (not just those affiliated to their wing) — routing
   // is the wing's call, not enforced by affiliation.
-  const { data: branchRows } = await admin
-    .from("branches" as never)
-    .select("id, name, constituency")
-    .eq("branch_type", "territorial")
-    .eq("is_active", true)
-    .order("name");
+  const [{ data: rows }, { data: branchRows }] = await Promise.all([
+    admin
+      .from("leads" as never)
+      .select(
+        `id, full_name, mobile_number, postal_code, status, captured_at,
+         routed_at, routed_to_branch_id, reroute_count, event_id,
+         events!inner(name),
+         routed_to:branches!leads_routed_to_branch_id_fkey(id, name)`,
+      )
+      .eq("wing_branch_id", auth.branch.id)
+      .order("captured_at", { ascending: false })
+      .limit(200),
+    admin
+      .from("branches" as never)
+      .select("id, name, constituency")
+      .eq("branch_type", "territorial")
+      .eq("is_active", true)
+      .order("name"),
+  ]);
+  const leads = (rows as LeadRow[] | null) ?? [];
   const territorialBranches = (branchRows as TerritorialBranch[] | null) ?? [];
 
   // Sprint 6 polish — Returned-from-branch attribution. For every visible

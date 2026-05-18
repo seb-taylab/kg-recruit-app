@@ -44,23 +44,26 @@ export default async function WingEventsPage() {
   }
 
   const admin = createAdminClient();
-  const { data: rows } = await admin
-    .from("events" as never)
-    .select("id, name, slug, event_date, location, is_active, created_at")
-    .eq("branch_id", auth.branch.id)
-    .order("created_at", { ascending: false });
+
+  // Events + leads (for per-event counts) are independent — both wing-scoped
+  // and small in volume. Parallelize.
+  const [{ data: rows }, { data: leadRows }] = await Promise.all([
+    admin
+      .from("events" as never)
+      .select("id, name, slug, event_date, location, is_active, created_at")
+      .eq("branch_id", auth.branch.id)
+      .order("created_at", { ascending: false }),
+    admin
+      .from("leads" as never)
+      .select("event_id")
+      .eq("wing_branch_id", auth.branch.id),
+  ]);
   const events = (rows as EventRow[] | null) ?? [];
 
   // Per-event lead counts. Cheap because event count is small per wing.
   const counts = new Map<string, number>();
-  if (events.length > 0) {
-    const { data: leadRows } = await admin
-      .from("leads" as never)
-      .select("event_id")
-      .eq("wing_branch_id", auth.branch.id);
-    for (const r of ((leadRows as Array<{ event_id: string }> | null) ?? [])) {
-      counts.set(r.event_id, (counts.get(r.event_id) ?? 0) + 1);
-    }
+  for (const r of (leadRows as Array<{ event_id: string }> | null) ?? []) {
+    counts.set(r.event_id, (counts.get(r.event_id) ?? 0) + 1);
   }
 
   return (

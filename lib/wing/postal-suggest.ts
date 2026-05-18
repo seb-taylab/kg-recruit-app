@@ -136,9 +136,13 @@ export async function suggestBranchesForPostals(
       .select("id, constituency")
       .eq("branch_type", "territorial")
       .eq("is_active", true),
+    // Only rows with a verified district contribute to same-district
+    // fallback — unverified rows are noise. Filtering at the DB keeps the
+    // payload small as the directory grows beyond GE2025's 33 entries.
     admin
       .from("constituency_directory" as never)
-      .select("constituency, district"),
+      .select("constituency, district")
+      .not("district", "is", null),
   ]);
   const branches = (branchRows as Array<{ id: string; constituency: string | null }> | null) ?? [];
   // Directory lookup: constituency (lowercased) → district. Lets us

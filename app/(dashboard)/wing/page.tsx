@@ -67,16 +67,11 @@ export default async function WingOverviewPage() {
 
   const admin = createAdminClient();
 
-  // Pull everything we need in four queries. Volumes are small (wing-scoped).
-  // lead_route_history is the source of truth for "received / returned" — the
-  // leads table only tells us the CURRENT routed_to_branch_id, which loses
-  // the trail after a return (NULL) or reroute (overwritten).
-  const [
-    { data: leadRows },
-    { data: eventRows },
-    { data: branchRows },
-    { data: historyRows },
-  ] = await Promise.all([
+  // First fetch leads + events — the two queries that are meaningful even
+  // for a brand-new wing with no captures. If leads is empty, short-circuit
+  // before hitting the territorial-branch list and history (neither has
+  // anything to show without leads).
+  const [{ data: leadRows }, { data: eventRows }] = await Promise.all([
     admin
       .from("leads" as never)
       .select("id, status, captured_at, routed_to_branch_id, event_id, full_name")
@@ -86,18 +81,26 @@ export default async function WingOverviewPage() {
       .from("events" as never)
       .select("id, name, is_active")
       .eq("branch_id", auth.activeBranch.id),
-    admin
-      .from("branches" as never)
-      .select("id, name")
-      .eq("branch_type", "territorial"),
-    admin
-      .from("lead_route_history" as never)
-      .select("lead_id, from_branch_id, to_branch_id, reason")
-      .eq("wing_branch_id", auth.activeBranch.id),
   ]);
-
   const leads = (leadRows as LeadRow[] | null) ?? [];
   const events = (eventRows as EventRow[] | null) ?? [];
+
+  // Branches + history are only needed when we have at least one lead.
+  // Skip both round-trips on first-run / empty-state wings.
+  const [{ data: branchRows }, { data: historyRows }] =
+    leads.length > 0
+      ? await Promise.all([
+          admin
+            .from("branches" as never)
+            .select("id, name")
+            .eq("branch_type", "territorial"),
+          admin
+            .from("lead_route_history" as never)
+            .select("lead_id, from_branch_id, to_branch_id, reason")
+            .eq("wing_branch_id", auth.activeBranch.id),
+        ])
+      : [{ data: [] as BranchRow[] }, { data: [] as RouteHistoryRow[] }];
+
   const branches = (branchRows as BranchRow[] | null) ?? [];
   const history = (historyRows as RouteHistoryRow[] | null) ?? [];
   const branchById = new Map(branches.map((b) => [b.id, b.name]));

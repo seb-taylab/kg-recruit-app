@@ -30,21 +30,32 @@ export default async function BranchOverviewPage() {
   const supabase = await createClient();
   const isChairman = auth.profile.role === "branch_chairman";
 
-  const [{ count: inboxCount }, { count: pendingMyCount }, { count: historyCount }] =
-    await Promise.all([
-      supabase
-        .from("applications")
-        .select("*", { count: "exact", head: true })
-        .in("status", INBOX_STATUSES),
-      supabase
-        .from("applications")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "PENDING_CHAIRMAN"),
-      supabase
-        .from("applications")
-        .select("*", { count: "exact", head: true })
-        .in("status", ["COMPLETED", "HQ_REJECTED", "ARCHIVED"]),
-    ]);
+  // Chairman only needs pendingMyCount (their signing queue); admin team
+  // uses inbox + history but not pendingMyCount. Branch on role so we
+  // never fire the queries the current viewer isn't going to render.
+  const [inboxRes, pendingMyRes, historyRes] = await Promise.all([
+    isChairman
+      ? Promise.resolve({ count: 0 as number | null })
+      : supabase
+          .from("applications")
+          .select("*", { count: "exact", head: true })
+          .in("status", INBOX_STATUSES),
+    isChairman
+      ? supabase
+          .from("applications")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "PENDING_CHAIRMAN")
+      : Promise.resolve({ count: 0 as number | null }),
+    isChairman
+      ? Promise.resolve({ count: 0 as number | null })
+      : supabase
+          .from("applications")
+          .select("*", { count: "exact", head: true })
+          .in("status", ["COMPLETED", "HQ_REJECTED", "ARCHIVED"]),
+  ]);
+  const inboxCount = inboxRes.count;
+  const pendingMyCount = pendingMyRes.count;
+  const historyCount = historyRes.count;
 
   const branchName = auth.branch?.name ?? "(no branch)";
 
