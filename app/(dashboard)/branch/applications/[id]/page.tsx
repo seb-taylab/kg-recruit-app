@@ -41,6 +41,29 @@ function ttlDaysUntil(expiresAt: string): number {
   );
 }
 
+/**
+ * Resolves the applicant's photo thumbnail URL for the Replace-photo card.
+ *   - Cloudinary public_id → build the auto-cropped delivery URL (public,
+ *     no signing needed; folder access control sits at the public_id
+ *     namespace level).
+ *   - Legacy Supabase Storage path → mint a 10-minute signed URL.
+ *   - null path → no photo on file.
+ *
+ * Extracted so the call can participate in the Promise.all above appRow
+ * without inlining a 12-line conditional.
+ */
+async function resolvePhotoUrl(photoPath: string | null): Promise<string | null> {
+  if (!photoPath) return null;
+  if (isCloudinaryPublicId(photoPath)) {
+    return applicantPhotoUrl(photoPath);
+  }
+  const adminSb = createAdminClient();
+  const { data: signed } = await adminSb.storage
+    .from("applicant-photos")
+    .createSignedUrl(photoPath, 60 * 10);
+  return signed?.signedUrl ?? null;
+}
+
 interface ApplicationRow {
   id: string;
   branch_id: string;
@@ -125,53 +148,51 @@ export default async function ApplicationDetailPage({
       ? "referral"
       : "applicant";
 
-  const { data: linkRow } = await supabase
-    .from("magic_links")
-    .select("id, expires_at, consumed_at, intended_role")
-    .eq("application_id", id)
-    .eq("intended_role", activeRole)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const link = linkRow as MagicLinkRow | null;
+  // Two independent fetches after appRow: the active magic link, the photo
+  // thumbnail URL (Cloudinary OR Supabase Storage signed), and the status
+  // event history. Status events + photo URL don't depend on linkRow, so
+  // run all three in parallel.
+  //
+  //   linkRow   ─── needed to fetch deliveryRows
+  //   photoUrl  ─── independent of linkRow
+  //   events    ─── independent of linkRow
+  const [linkResult, currentPhotoUrl, statusEvents] = await Promise.all([
+    supabase
+      .from("magic_links")
+      .select("id, expires_at, consumed_at, intended_role")
+      .eq("application_id", id)
+      .eq("intended_role", activeRole)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    resolvePhotoUrl(app.applicant_photo_url),
+    loadApplicationEvents(supabase, app.id),
+  ]);
+  const link = linkResult.data as MagicLinkRow | null;
 
-  const { data: deliveryRows } = await supabase
-    .from("link_deliveries")
-    .select("id, channel, delivered_at, profiles:delivered_by_id(full_name)")
-    .eq("magic_link_id", link?.id ?? "00000000-0000-0000-0000-000000000000")
-    .order("delivered_at", { ascending: false });
-  const deliveries: LinkDeliveryRow[] = ((deliveryRows as DeliveryQueryRow[] | null) ?? []).map(
-    (d) => ({
+  // Deliveries query is the only one that genuinely depends on linkRow.id.
+  // Skip the query entirely when there's no link (was previously round-
+  // tripped with a sentinel UUID guaranteed to return nothing).
+  let deliveries: LinkDeliveryRow[] = [];
+  if (link) {
+    const { data: deliveryRows } = await supabase
+      .from("link_deliveries")
+      .select("id, channel, delivered_at, profiles:delivered_by_id(full_name)")
+      .eq("magic_link_id", link.id)
+      .order("delivered_at", { ascending: false });
+    deliveries = ((deliveryRows as DeliveryQueryRow[] | null) ?? []).map((d) => ({
       id: d.id,
       channel: d.channel,
       delivered_at: d.delivered_at,
       delivered_by_name: d.profiles?.full_name ?? null,
-    }),
-  );
+    }));
+  }
 
   const shareUrl = rawToken
     ? activeRole === "referral"
       ? buildReferralUrl(rawToken)
       : buildApplicantUrl(rawToken)
     : null;
-
-  // Thumbnail for the Replace-photo card.
-  //   - Cloudinary public_id → build the auto-cropped delivery URL (public,
-  //     no signing needed; folder access control sits at the public_id
-  //     namespace level).
-  //   - Legacy Supabase Storage path → mint a 10-minute signed URL.
-  let currentPhotoUrl: string | null = null;
-  if (app.applicant_photo_url) {
-    if (isCloudinaryPublicId(app.applicant_photo_url)) {
-      currentPhotoUrl = applicantPhotoUrl(app.applicant_photo_url);
-    } else {
-      const adminSb = createAdminClient();
-      const { data: signed } = await adminSb.storage
-        .from("applicant-photos")
-        .createSignedUrl(app.applicant_photo_url, 60 * 10);
-      currentPhotoUrl = signed?.signedUrl ?? null;
-    }
-  }
 
   const recipientPhone =
     activeRole === "referral" ? app.assigned_referral_phone : app.applicant_phone;
@@ -196,11 +217,8 @@ export default async function ApplicationDetailPage({
   const fullPhoneVisible =
     auth.profile.role === "branch_master_admin" || auth.profile.role === "branch_admin";
 
-  // Status history — every transition this application has been through.
-  // Replaces the branch-wide Journey Timeline (deleted in the same PR)
-  // with a per-application view that lives WITH the application it
-  // belongs to. Loaded server-side so the disclosure is instant on open.
-  const statusEvents = await loadApplicationEvents(supabase, app.id);
+  // statusEvents already loaded in the Promise.all above — the per-
+  // application disclosure is rendered below.
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">

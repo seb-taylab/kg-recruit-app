@@ -199,6 +199,10 @@ export async function sendApplicationToHqAction(
 
   revalidatePath("/branch/ready-to-send");
   revalidatePath(`/branch/applications/${applicationId}`);
+  // READY_TO_SEND → SENT_TO_HQ — also surfaces on /branch/inbox (still in
+  // the active pipeline) and /branch/journey (kanban column change).
+  revalidatePath("/branch/inbox");
+  revalidatePath("/branch/journey");
   return { ok: true };
 }
 

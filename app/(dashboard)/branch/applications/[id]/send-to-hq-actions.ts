@@ -147,5 +147,9 @@ export async function markSentWithoutEmailAction(
 
   revalidatePath("/branch/inbox");
   revalidatePath(`/branch/applications/${applicationId}`);
+  // READY_TO_SEND → SENT_TO_HQ — both states are visible on /branch/journey
+  // and the source row also lives on /branch/ready-to-send.
+  revalidatePath("/branch/journey");
+  revalidatePath("/branch/ready-to-send");
   return { ok: true };
 }

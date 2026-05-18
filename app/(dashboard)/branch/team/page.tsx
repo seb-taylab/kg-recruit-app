@@ -43,10 +43,20 @@ export default async function TeamPage() {
     .order("created_at", { ascending: true });
   const profiles = (rows as TeamProfile[] | null) ?? [];
 
-  const { data: authList } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
+  // Previously called admin.auth.admin.listUsers({ perPage: 200 }) to build
+  // a global email map — that's O(all users in the system) for a query
+  // that only needs O(team size). With dedupe, a 12-person team fires 12
+  // (or fewer) parallel getUserById calls instead of one query that
+  // scans every auth.user row. Hard ceiling at 200 also silently broke
+  // past 200 users system-wide.
+  const uniqueUserIds = Array.from(new Set(profiles.map((p) => p.user_id)));
+  const emailLookups = await Promise.all(
+    uniqueUserIds.map((uid) => admin.auth.admin.getUserById(uid)),
+  );
   const emailById = new Map<string, string>();
-  for (const u of (authList?.users ?? []) as AuthUserMin[]) {
-    if (u.email) emailById.set(u.id, u.email);
+  for (const res of emailLookups) {
+    const u = res.data?.user as AuthUserMin | null;
+    if (u?.id && u.email) emailById.set(u.id, u.email);
   }
 
   const isMaster = auth.profile.role === "branch_master_admin";

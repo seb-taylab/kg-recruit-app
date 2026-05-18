@@ -168,5 +168,11 @@ export async function submitChairmanSignatureAction(
   revalidatePath(`/branch/sign`);
   revalidatePath(`/branch/sign/${applicationId}`);
   revalidatePath(`/branch/applications/${applicationId}`);
+  // Chairman signing flips PENDING_CHAIRMAN → READY_TO_SEND. Both states
+  // are surfaced on /branch/inbox + /branch/journey, and the row also
+  // appears on /branch/ready-to-send.
+  revalidatePath("/branch/inbox");
+  revalidatePath("/branch/journey");
+  revalidatePath("/branch/ready-to-send");
   return { ok: true };
 }

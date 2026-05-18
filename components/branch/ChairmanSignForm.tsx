@@ -24,8 +24,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { SignaturePad } from "@/components/applicant/SignaturePad";
+import dynamic from "next/dynamic";
 import { submitChairmanSignatureAction } from "@/app/(dashboard)/branch/sign/[id]/actions";
+
+// SignaturePad → react-signature-canvas (~30KB). Chairman sees the
+// application detail before reaching the signing step; keeping this off
+// the initial bundle shaves bytes from the review screen too.
+const SignaturePad = dynamic(
+  () =>
+    import("@/components/applicant/SignaturePad").then((m) => ({
+      default: m.SignaturePad,
+    })),
+  { ssr: false },
+);
 
 interface ChairmanSignFormProps {
   applicationId: string;

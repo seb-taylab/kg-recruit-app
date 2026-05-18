@@ -179,6 +179,10 @@ export async function captureLeadAction(
 
   revalidatePath("/wing/triage");
   revalidatePath("/wing/events");
+  // Wing Overview shows live funnel counts + per-event/per-branch
+  // summaries — the page admins watch during a booth event. Stale
+  // counters here look like a bug during a live demo.
+  revalidatePath("/wing");
 
   // Resolve WhatsApp community links for the confirmation panel. Failures
   // here (e.g. RLS quirk, no links configured) shouldn't fail the capture

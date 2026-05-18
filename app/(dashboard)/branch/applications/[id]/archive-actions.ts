@@ -98,6 +98,9 @@ export async function archiveApplicationAction(
 
   revalidatePath(`/branch/applications/${applicationId}`);
   revalidatePath("/branch/history");
+  // Journey is the kanban + table over every non-archived row; archiving
+  // hides this app from it. Without a refresh, the row lingers visually.
+  revalidatePath("/branch/journey");
   return { ok: true };
 }
 
@@ -177,6 +180,8 @@ export async function unarchiveApplicationAction(
 
   revalidatePath(`/branch/applications/${applicationId}`);
   revalidatePath("/branch/history");
+  // Unarchive restores a row that's been hidden from /branch/journey.
+  revalidatePath("/branch/journey");
   return { ok: true };
 }
 

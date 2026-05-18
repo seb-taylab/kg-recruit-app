@@ -52,21 +52,33 @@ export default async function TaylabUsersPage({
   const { branch: branchFilter, role: roleFilter } = await searchParams;
   const admin = createAdminClient();
 
-  const [branchesRes, profilesRes, authRes] = await Promise.all([
+  // Branches + profiles in parallel. Previously also pre-paged
+  // admin.auth.admin.listUsers({ perPage: 500 }) here, which both scanned
+  // the entire auth.users table AND silently broke past 500. Replaced
+  // with per-profile getUserById lookups after the profile list is known.
+  const [branchesRes, profilesRes] = await Promise.all([
     admin.from("branches" as never).select("id, name").order("name"),
     admin
       .from("profiles" as never)
       .select("id, user_id, full_name, role, branch_id, is_active")
       .order("full_name"),
-    admin.auth.admin.listUsers({ page: 1, perPage: 500 }),
   ]);
 
   const branches = (branchesRes.data as BranchRow[] | null) ?? [];
   const branchNameById = new Map(branches.map((b) => [b.id, b.name]));
   const profiles = (profilesRes.data as ProfileRow[] | null) ?? [];
+
+  // Build email map by hitting auth.users only for the user_ids we actually
+  // need. Dedupe first (one user can have multiple profiles under the
+  // multi-profile model).
+  const uniqueUserIds = Array.from(new Set(profiles.map((p) => p.user_id)));
+  const emailLookups = await Promise.all(
+    uniqueUserIds.map((uid) => admin.auth.admin.getUserById(uid)),
+  );
   const emailById = new Map<string, string>();
-  for (const u of authRes.data?.users ?? []) {
-    if (u.email) emailById.set(u.id, u.email);
+  for (const res of emailLookups) {
+    const u = res.data?.user;
+    if (u?.id && u.email) emailById.set(u.id, u.email);
   }
 
   const filtered = profiles.filter((p) => {

@@ -159,6 +159,9 @@ export async function recordHqOutcomeAction(
   revalidatePath(`/branch/applications/${applicationId}`);
   revalidatePath("/branch/inbox");
   revalidatePath("/branch/history");
+  // Outcome flips status to COMPLETED/HQ_REJECTED — both surfaced on
+  // /branch/journey (the kanban column changes).
+  revalidatePath("/branch/journey");
   return { ok: true };
 }
 
@@ -255,5 +258,8 @@ export async function reverseHqOutcomeAction(
   revalidatePath(`/branch/applications/${applicationId}`);
   revalidatePath("/branch/inbox");
   revalidatePath("/branch/history");
+  // Reverse drops the row back from COMPLETED/HQ_REJECTED into SENT_TO_HQ
+  // — both surfaces (history + journey) need to refresh.
+  revalidatePath("/branch/journey");
   return { ok: true };
 }

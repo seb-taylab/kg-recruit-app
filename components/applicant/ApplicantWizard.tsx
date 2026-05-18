@@ -47,12 +47,22 @@ import {
   submitApplicantSignatureAction,
 } from "@/app/apply/[token]/actions";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { MobileFormShell } from "./MobileFormShell";
 import { PhotoStep } from "./PhotoStep";
 import { NricStep } from "./NricStep";
-import { SignaturePad } from "./SignaturePad";
 import { AddressFields } from "./AddressFields";
 import { OccupationOrganisationFields } from "./OccupationOrganisationFields";
+
+// SignaturePad pulls in react-signature-canvas (~30KB gzipped) and only
+// renders on the final "sign" step. Page1/page2/photo/NRIC don't need it
+// — dynamic import keeps the booth-tablet flow's first-paint bytes lean.
+// ssr:false because the canvas relies on browser APIs (ResizeObserver,
+// HTMLCanvasElement.toDataURL).
+const SignaturePad = dynamic(
+  () => import("./SignaturePad").then((m) => ({ default: m.SignaturePad })),
+  { ssr: false },
+);
 
 type WizardStep = "page1" | "page2" | "photo" | "nric" | "sign";
 
