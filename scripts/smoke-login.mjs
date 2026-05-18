@@ -29,11 +29,17 @@ for (const { email, expectedRole } of cases) {
     auth: { autoRefreshToken: false, persistSession: false },
     global: { headers: { Authorization: `Bearer ${data.session.access_token}` } },
   });
+  // Multi-profile model: match on user_id, not id (profiles.id is now an
+  // independent UUID per profile). maybeSingle() because a future test
+  // account could have N profiles; for this smoke harness we take the first.
   const { data: profile, error: pErr } = await userClient
     .from("profiles")
     .select("role, branch_id, is_active")
-    .eq("id", data.user.id)
-    .single();
+    .eq("user_id", data.user.id)
+    .eq("is_active", true)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
   if (pErr) console.log(`  ✗ RLS denied profile read: ${pErr.message}`);
   else {
     const ok = profile.role === expectedRole;

@@ -59,15 +59,23 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    const { data: profileRow } = await supabase
+    // Multi-profile model: a user can hold N profiles across N branches
+    // (e.g. wing_admin at Young PAP + branch_admin at KG, or taylab_staff
+    // + branch profiles). Match on user_id, not id — profiles.id is an
+    // independent UUID (gen_random_uuid()) per profile under the new
+    // model, so .eq("id", user.id) returns null for any user created
+    // after the 2026-05-17 multi-profile migration. lib/auth/get-user.ts
+    // already does this correctly; proxy.ts was the regression.
+    const { data: profileRows } = await supabase
       .from("profiles")
       .select("id, role, is_active")
-      .eq("id", user.id)
-      .single();
-    const profile = profileRow as { id: string; role: string; is_active: boolean } | null;
+      .eq("user_id", user.id)
+      .eq("is_active", true);
+    const profiles =
+      (profileRows as Array<{ id: string; role: string; is_active: boolean }> | null) ?? [];
 
-    if (!profile || !profile.is_active) {
-      // Sign them out then bounce to login.
+    if (profiles.length === 0) {
+      // No active profile rows = deactivated. Sign them out then bounce.
       await supabase.auth.signOut();
       const url = request.nextUrl.clone();
       url.pathname = "/login";
@@ -75,15 +83,18 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    const isTaylab = profile.role === "taylab_staff";
+    const hasTaylab = profiles.some((p) => p.role === "taylab_staff");
+    const hasBranch = profiles.some((p) => p.role !== "taylab_staff");
 
     // Taylab platform is invisible to non-Taylab users — 404 instead of
     // redirect, so the route's existence isn't leaked.
-    if (isTaylabPath && !isTaylab) return notFoundResponse(request);
+    if (isTaylabPath && !hasTaylab) return notFoundResponse(request);
 
-    // Branch routes accept only branch users. Taylab Staff hitting /branch
-    // gets bounced to /taylab (visible to them; their own surface).
-    if (isBranchPath && isTaylab) {
+    // Branch routes accept only branch users. A pure Taylab-only user
+    // hitting /branch gets bounced to /taylab (their own surface). Mixed
+    // users (taylab + branch) stay — their active-profile cookie expresses
+    // which workspace they're "in", and that resolves inside the dashboard.
+    if (isBranchPath && hasTaylab && !hasBranch) {
       const url = request.nextUrl.clone();
       url.pathname = "/taylab";
       return NextResponse.redirect(url);
@@ -91,16 +102,25 @@ export async function proxy(request: NextRequest) {
   }
 
   if (isAuthPage && user) {
-    const { data: profileRow } = await supabase
+    // Same multi-profile fix — match on user_id, not id.
+    const { data: profileRows } = await supabase
       .from("profiles")
       .select("role, is_active")
-      .eq("id", user.id)
-      .single();
-    const profile = profileRow as { role: string; is_active: boolean } | null;
+      .eq("user_id", user.id)
+      .eq("is_active", true);
+    const profiles =
+      (profileRows as Array<{ role: string; is_active: boolean }> | null) ?? [];
 
-    if (profile?.is_active) {
+    if (profiles.length > 0) {
       const url = request.nextUrl.clone();
-      url.pathname = profile.role === "taylab_staff" ? "/taylab" : "/branch";
+      // Multi-profile users → workspace picker. Pure-taylab → /taylab.
+      // Pure-branch (or wing) → /branch (or /wing handled downstream).
+      if (profiles.length > 1) {
+        url.pathname = "/select-workspace";
+      } else {
+        const only = profiles[0];
+        url.pathname = only.role === "taylab_staff" ? "/taylab" : "/branch";
+      }
       return NextResponse.redirect(url);
     }
   }
