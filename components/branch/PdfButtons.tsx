@@ -7,7 +7,8 @@
  *
  * Two related buttons:
  *  - PreviewPdfButton — renders a fresh PDF from current data, downloads it,
- *    no state change. Available from READY_TO_SEND onwards.
+ *    no state change. Available at any status once the applicant's photo is
+ *    on file; fields not yet captured render blank.
  *  - DownloadStoredPdfButton — signs a URL for the PDF previously generated
  *    by sendApplicationToHqAction. Available once status is SENT_TO_HQ.
  */
