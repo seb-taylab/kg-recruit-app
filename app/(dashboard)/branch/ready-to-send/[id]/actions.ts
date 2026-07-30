@@ -222,9 +222,9 @@ export interface PreviewResult {
 
 /**
  * Render a draft PDF from current data WITHOUT persisting or transitioning
- * state. Allowed states: anything from READY_TO_SEND onwards (HQ outcome
- * still needs the PDF; archived rows keep it visible). Earlier states have
- * incomplete data and would fail render anyway.
+ * state. Available at any status — earlier states just render with blank
+ * fields for anything not yet captured. The renderer still requires the
+ * applicant's photo; without it, a clear error surfaces to the caller.
  */
 export async function previewPdfAction(
   input: z.input<typeof idSchema>,
@@ -247,25 +247,12 @@ export async function previewPdfAction(
   const admin = createAdminClient();
   const { data: row } = await admin
     .from("applications" as never)
-    .select("status, branch_id")
+    .select("branch_id")
     .eq("id", applicationId)
     .single();
-  const stateRow = row as { status: string; branch_id: string } | null;
+  const stateRow = row as { branch_id: string } | null;
   if (!stateRow || stateRow.branch_id !== auth.branch.id) {
     return { ok: false, error: "Application not found." };
-  }
-  const previewable = new Set([
-    "READY_TO_SEND",
-    "SENT_TO_HQ",
-    "COMPLETED",
-    "HQ_REJECTED",
-    "ARCHIVED",
-  ]);
-  if (!previewable.has(stateRow.status)) {
-    return {
-      ok: false,
-      error: `Preview unavailable in state ${stateRow.status}. Try again once the Chairman has signed.`,
-    };
   }
 
   const render = await renderApplicationPdf(applicationId, auth.branch.id, auth.branch.name);

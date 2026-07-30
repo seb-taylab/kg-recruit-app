@@ -261,14 +261,14 @@ export default async function ApplicationDetailPage({
         </Card>
       )}
 
-      {(app.hq_pdf_url || app.status === "READY_TO_SEND") && (
+      {isAdminTeam && (app.hq_pdf_url || app.applicant_photo_url) && (
         <Card>
           <CardHeader>
-            <CardTitle>Signed PDF</CardTitle>
+            <CardTitle>Filled PDF</CardTitle>
             <CardDescription>
               {app.hq_pdf_url
-                ? "The PDF emailed to HQ. Re-download any time."
-                : "Preview the PDF before sending. Doesn't change state."}
+                ? "The PDF emailed to HQ. Re-download, or preview the latest data."
+                : "Download the filled form as it stands. Fields not yet captured render blank. Doesn't change state."}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-2 sm:flex-row">
