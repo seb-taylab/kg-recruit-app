@@ -33,7 +33,13 @@ export default async function BranchOverviewPage() {
   // Chairman only needs pendingMyCount (their signing queue); admin team
   // uses inbox + history but not pendingMyCount. Branch on role so we
   // never fire the queries the current viewer isn't going to render.
-  const [inboxRes, pendingMyRes, historyRes] = await Promise.all([
+  //
+  // pipelineCount = every application EXCEPT ARCHIVED, matching what
+  // /branch/journey ("Browse all") actually shows (JOURNEY_HIDDEN =
+  // ["ARCHIVED"]). Previously derived as inbox + history, which both
+  // under-counted (skipped DRAFT / FILLING / PENDING_CHAIRMAN etc.) and
+  // over-counted (history includes ARCHIVED, which the linked page hides).
+  const [inboxRes, pendingMyRes, historyRes, pipelineRes] = await Promise.all([
     isChairman
       ? Promise.resolve({ count: 0 as number | null })
       : supabase
@@ -52,10 +58,15 @@ export default async function BranchOverviewPage() {
           .from("applications")
           .select("*", { count: "exact", head: true })
           .in("status", ["COMPLETED", "HQ_REJECTED", "ARCHIVED"]),
+    supabase
+      .from("applications")
+      .select("*", { count: "exact", head: true })
+      .neq("status", "ARCHIVED"),
   ]);
   const inboxCount = inboxRes.count;
   const pendingMyCount = pendingMyRes.count;
   const historyCount = historyRes.count;
+  const pipelineCount = pipelineRes.count;
 
   const branchName = auth.branch?.name ?? "(no branch)";
 
@@ -131,7 +142,7 @@ export default async function BranchOverviewPage() {
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <p className="text-3xl font-bold text-text-primary">
-              {(inboxCount ?? 0) + (pendingMyCount ?? 0) + (historyCount ?? 0)}
+              {pipelineCount ?? 0}
             </p>
             <Button asChild variant="outline">
               <Link href="/branch/journey">Browse all</Link>
