@@ -100,8 +100,11 @@ export function DirectoryRow({
         ? "border-state-error text-state-error"
         : "border-state-warning text-state-warning";
 
+  // Pixel-precise column widths for the constituency directory row — opt out of the token allowlist.
+  const rowGridClass = "grid grid-cols-1 gap-3 rounded-md border border-border bg-surface-card p-4 sm:grid-cols-[1fr_120px_220px_auto] sm:items-center"; // tokens-ok
+
   return (
-    <div className="grid grid-cols-1 gap-3 rounded-md border border-border bg-surface-card p-4 sm:grid-cols-[1fr_120px_220px_auto] sm:items-center">
+    <div className={rowGridClass}>
       <div className="flex flex-col gap-0.5">
         <span className="font-medium text-text-primary">{constituency}</span>
         <span className="text-xs text-text-muted">

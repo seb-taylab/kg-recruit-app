@@ -62,12 +62,15 @@ export function CaptureConfirmation({
           </div>
 
           <div className="flex flex-col gap-4">
-            {links.map((link) => (
+            {links.map((link) => {
+              // QR contrast requires a pure white tile — opt out of the token allowlist.
+              const qrTileClass = "flex shrink-0 items-center justify-center rounded-md bg-white p-2"; // tokens-ok
+              return (
               <div
                 key={link.id}
                 className="flex items-center gap-4 rounded-md border border-border bg-surface-card p-4"
               >
-                <div className="flex shrink-0 items-center justify-center rounded-md bg-white p-2">
+                <div className={qrTileClass}>
                   <QRCode
                     value={link.invite_url}
                     size={96}
@@ -91,7 +94,8 @@ export function CaptureConfirmation({
                   </a>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </>
       ) : (
