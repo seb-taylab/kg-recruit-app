@@ -215,8 +215,13 @@ export const formCoordinates: FormCoordinates = {
       email:    { x: 115, y: 44,  maxWidth: 315 },
     },
 
-    // Photo box top-right corner above HQ block. 7:9 ratio per Addendum Gap 4.
-    photo: { x: 462, y: 705, width: 75, height: 96 },
+    // Photo box top-right corner above HQ block. Measured against the
+    // MF_V1.0 template: the printed box is ~74×85pt at (463, 723). The
+    // applicant photo is captured at 7:9 (700×900, via Cloudinary
+    // c_thumb,g_face), so drawing at 74×85 would stretch it horizontally.
+    // Fit by height and centre horizontally instead: width 66 (= 85 × 7/9),
+    // x offset +4 so the drawn image sits centred within the printed box.
+    photo: { x: 467, y: 723, width: 66, height: 85 },
   },
 
   page2: {
