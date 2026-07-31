@@ -4,6 +4,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { requireAuth } from "@/lib/auth/get-user";
 import { isBranchAdminTeam } from "@/types/database";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { applicantPhotoUrl, isCloudinaryPublicId } from "@/lib/cloudinary/client";
 import { formatDateDDMMMYYYY } from "@/lib/format/date";
 import { RecipientPicker } from "@/components/branch/RecipientPicker";
 import { PreviewPdfButton } from "@/components/branch/PdfButtons";
@@ -71,13 +72,20 @@ export default async function ReadyToSendDetailPage({
     );
   }
 
-  // Signed URL for the applicant photo preview.
+  // Signed URL for the applicant photo preview. applicant_photo_url is
+  // either a Cloudinary public_id (new path) or a legacy Supabase Storage
+  // path — mirror lib/pdf/render-application.ts so the preview doesn't
+  // silently 404 on Cloudinary-hosted photos.
   let photoSignedUrl: string | null = null;
   if (app.applicant_photo_url) {
-    const { data: signed } = await admin.storage
-      .from("applicant-photos")
-      .createSignedUrl(app.applicant_photo_url, 60 * 60);
-    photoSignedUrl = signed?.signedUrl ?? null;
+    if (isCloudinaryPublicId(app.applicant_photo_url)) {
+      photoSignedUrl = applicantPhotoUrl(app.applicant_photo_url);
+    } else {
+      const { data: signed } = await admin.storage
+        .from("applicant-photos")
+        .createSignedUrl(app.applicant_photo_url, 60 * 60);
+      photoSignedUrl = signed?.signedUrl ?? null;
+    }
   }
 
   const applicantDisplay =

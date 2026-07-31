@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { recordLinkOpened, verifyMagicLink } from "@/lib/auth/magic-link-verify";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { applicantPhotoUrl, isCloudinaryPublicId } from "@/lib/cloudinary/client";
 import {
   ReferralSignWizard,
   type ReferralWizardApplication,
@@ -58,12 +59,22 @@ export default async function ReferralTokenPage({
   // Generate a short-lived signed URL for the applicant photo so the
   // referral can see it during their review. 1-hour TTL is enough for the
   // sign session.
+  //
+  // applicant_photo_url is either a Cloudinary public_id (new path, starts
+  // with `kg-recruit/applications/…`) or a legacy Supabase Storage path.
+  // Without the Cloudinary branch the photo silently fails to load and the
+  // referral is asked to vouch for a face they can't see. Mirror
+  // lib/pdf/render-application.ts.
   let applicantPhotoSignedUrl: string | null = null;
   if (row.applicant_photo_url) {
-    const { data: signed } = await admin.storage
-      .from("applicant-photos")
-      .createSignedUrl(row.applicant_photo_url, 60 * 60);
-    applicantPhotoSignedUrl = signed?.signedUrl ?? null;
+    if (isCloudinaryPublicId(row.applicant_photo_url)) {
+      applicantPhotoSignedUrl = applicantPhotoUrl(row.applicant_photo_url);
+    } else {
+      const { data: signed } = await admin.storage
+        .from("applicant-photos")
+        .createSignedUrl(row.applicant_photo_url, 60 * 60);
+      applicantPhotoSignedUrl = signed?.signedUrl ?? null;
+    }
   }
 
   const application: ReferralWizardApplication = {
