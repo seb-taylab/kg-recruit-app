@@ -72,6 +72,7 @@ try {
 
   const { rows: after } = await pgClient.query(
     `select a.nric_purged_at,
+            a.nric_no,
             exists(select 1 from public.nric_uploads u where u.application_id = a.id) as has_nric,
             (select count(*) from public.audit_log
               where application_id = a.id and action = 'NRIC_PURGED') as audit_rows
@@ -79,10 +80,13 @@ try {
     [appId],
   );
   const r = after[0];
-  console.log(`  After: has_nric=${r.has_nric}, nric_purged_at=${r.nric_purged_at}, audit_rows=${r.audit_rows}`);
+  console.log(
+    `  After: has_nric=${r.has_nric}, nric_no=${r.nric_no}, nric_purged_at=${r.nric_purged_at}, audit_rows=${r.audit_rows}`,
+  );
 
   const ok =
     r.has_nric === false &&
+    r.nric_no === null &&
     r.nric_purged_at !== null &&
     Number(r.audit_rows) >= 1;
   console.log(ok ? "\n✓ PURGE SMOKE TEST PASSED" : "\n✗ PURGE SMOKE TEST FAILED");
