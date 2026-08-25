@@ -15,11 +15,13 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hashMagicLinkToken } from "@/lib/auth/magic-link";
 
+export type MagicLinkRole = "applicant" | "referral" | "chairman";
+
 export interface VerifiedMagicLink {
   id: string;
   application_id: string;
   branch_id: string;
-  intended_role: "applicant" | "referral";
+  intended_role: MagicLinkRole;
   expires_at: string;
   consumed_at: string | null;
   link_opened_at: string | null;
@@ -40,7 +42,7 @@ export type VerifyResult =
 
 export async function verifyMagicLink(
   rawToken: string,
-  expectedRole: "applicant" | "referral",
+  expectedRole: MagicLinkRole,
 ): Promise<VerifyResult> {
   if (!rawToken || rawToken.length < 20) return { ok: false, reason: "not_found" };
   const tokenHash = hashMagicLinkToken(rawToken);
