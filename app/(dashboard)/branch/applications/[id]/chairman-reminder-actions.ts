@@ -17,6 +17,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isBranchAdminTeam } from "@/types/database";
 import { writeAuditLog } from "@/lib/audit/log";
 import { sendEmail } from "@/lib/email/send";
+import { mintChairmanSignToken } from "@/lib/auth/chairman-link";
+import { buildChairmanSignMessage, buildWhatsAppShareUrl } from "@/lib/invite/whatsapp";
 import {
   chairmanReminderHtml,
   chairmanReminderSubject,
@@ -31,6 +33,96 @@ export interface ActionResult {
 const schema = z.object({
   applicationId: z.string().uuid(),
 });
+
+const mintSchema = z.object({
+  applicationId: z.string().uuid(),
+  channel: z.enum(["copy_link", "whatsapp"]),
+});
+
+export interface MintLinkResult {
+  ok: boolean;
+  error?: string;
+  /** The passwordless chairman sign URL. */
+  url?: string;
+  /** wa.me deep link (phone-less — sender picks the chairman contact). */
+  waUrl?: string;
+}
+
+/**
+ * Mint a fresh passwordless chairman sign link and log the share. Powers the
+ * "Nudge the Chairman" card's Copy link / Share to WhatsApp buttons — the
+ * chairman signs without logging in. Returns the raw URL (+ a WhatsApp deep
+ * link) to the authenticated admin who will forward it.
+ */
+export async function mintChairmanSignLinkAction(
+  input: z.input<typeof mintSchema>,
+): Promise<MintLinkResult> {
+  const parsed = mintSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Bad input." };
+
+  let auth;
+  try {
+    auth = await requireAuth();
+  } catch (err) {
+    if (err instanceof PermissionError) return { ok: false, error: err.message };
+    throw err;
+  }
+  if (!auth.branch || !isBranchAdminTeam(auth.profile.role)) {
+    return { ok: false, error: "Branch admin team only." };
+  }
+
+  const admin = createAdminClient();
+  const { applicationId, channel } = parsed.data;
+
+  const { data: appRow } = await admin
+    .from("applications" as never)
+    .select("id, branch_id, status, applicant_name_at_invite, surname, given_names")
+    .eq("id", applicationId)
+    .single();
+  const app = appRow as
+    | {
+        id: string;
+        branch_id: string;
+        status: string;
+        applicant_name_at_invite: string | null;
+        surname: string | null;
+        given_names: string | null;
+      }
+    | null;
+  if (!app || app.branch_id !== auth.branch.id) {
+    return { ok: false, error: "Application not found." };
+  }
+  if (app.status !== "PENDING_CHAIRMAN") {
+    return {
+      ok: false,
+      error: `Application is in state ${app.status}. A sign link only works when it's PENDING_CHAIRMAN.`,
+    };
+  }
+
+  const minted = await mintChairmanSignToken(applicationId, auth.branch.id, auth.userId);
+  if (!minted) return { ok: false, error: "Couldn't create the sign link — try again." };
+
+  // Log the share against the freshly-minted link.
+  await admin.from("link_deliveries" as never).insert({
+    magic_link_id: minted.magicLinkId,
+    channel,
+    delivered_by_id: auth.userId,
+    metadata: { role: "chairman" },
+  } as never);
+
+  const applicantName =
+    (app.given_names && app.surname
+      ? `${app.given_names} ${app.surname}`
+      : app.applicant_name_at_invite) ?? "an applicant";
+  const waMessage = buildChairmanSignMessage({
+    applicantName,
+    branchName: auth.branch.name,
+    adminName: auth.profile.full_name ?? "your Branch Admin",
+    link: minted.url,
+  });
+
+  return { ok: true, url: minted.url, waUrl: buildWhatsAppShareUrl(waMessage) };
+}
 
 export async function sendChairmanReminderAction(
   input: z.input<typeof schema>,
@@ -106,13 +198,17 @@ export async function sendChairmanReminderAction(
     (app.given_names && app.surname
       ? `${app.given_names} ${app.surname}`
       : app.applicant_name_at_invite) ?? "an applicant";
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://kg.taylab.com";
-  const link = `${baseUrl}/branch/sign/${applicationId}`;
+  // Send a passwordless sign link so the chairman can sign without logging
+  // in — same trust model as the applicant/referral magic links.
+  const minted = await mintChairmanSignToken(applicationId, auth.branch.id, auth.userId);
+  if (!minted) {
+    return { ok: false, error: "Couldn't create the sign link — try again." };
+  }
   const vars = {
     applicantName,
     branchName: auth.branch.name,
     adminName: auth.profile.full_name ?? "your Branch Admin",
-    link,
+    link: minted.url,
   };
 
   const sent = await sendEmail({

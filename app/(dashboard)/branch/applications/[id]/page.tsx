@@ -340,10 +340,7 @@ export default async function ApplicationDetailPage({
       )}
 
       {isAdminTeam && app.status === "PENDING_CHAIRMAN" && (
-        <ChairmanReminderCard
-          applicationId={app.id}
-          appBaseUrl={process.env.NEXT_PUBLIC_APP_URL ?? "https://kg.taylab.com"}
-        />
+        <ChairmanReminderCard applicationId={app.id} />
       )}
 
       {isAdminTeam && app.status === "SENT_TO_HQ" && (

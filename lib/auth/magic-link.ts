@@ -36,6 +36,16 @@ export function buildReferralUrl(rawToken: string, appUrl?: string): string {
   return `${base}/referral/${rawToken}`;
 }
 
+/**
+ * Construct the public URL the Chairman clicks to sign — no login required,
+ * same passwordless model as the applicant/referral links. Served by the
+ * top-level (non-dashboard) route /branch-sign/[token].
+ */
+export function buildChairmanUrl(rawToken: string, appUrl?: string): string {
+  const base = (appUrl ?? process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/\/$/, "");
+  return `${base}/branch-sign/${rawToken}`;
+}
+
 /** Hours-from-now → ISO timestamp for `magic_links.expires_at`. */
 export function ttlToExpiry(ttlHours: number): string {
   return new Date(Date.now() + ttlHours * 60 * 60 * 1000).toISOString();

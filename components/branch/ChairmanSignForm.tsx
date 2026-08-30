@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import dynamic from "next/dynamic";
 import { submitChairmanSignatureAction } from "@/app/(dashboard)/branch/sign/[id]/actions";
+import { submitChairmanSignatureViaTokenAction } from "@/app/branch-sign/[token]/actions";
 
 // SignaturePad → react-signature-canvas (~30KB). Chairman sees the
 // application detail before reaching the signing step; keeping this off
@@ -42,12 +43,19 @@ interface ChairmanSignFormProps {
   applicationId: string;
   applicantDisplayName: string;
   defaultNameOnForm: string;
+  /**
+   * When present, the chairman arrived via a passwordless magic-link
+   * (/branch-sign/[token]) — submit through the token action and land on
+   * the token "done" page instead of the authenticated dashboard.
+   */
+  token?: string;
 }
 
 export function ChairmanSignForm({
   applicationId,
   applicantDisplayName,
   defaultNameOnForm,
+  token,
 }: ChairmanSignFormProps) {
   const router = useRouter();
   const [nameOnForm, setNameOnForm] = React.useState(defaultNameOnForm);
@@ -58,21 +66,24 @@ export function ChairmanSignForm({
   async function handleSignatureSubmit(dataUrl: string) {
     setFieldErrors({});
     setServerError(null);
-    const result = await submitChairmanSignatureAction(
-      applicationId,
-      {
-        chairman_name_on_form: nameOnForm,
-        chairman_known_years: yearsKnown === "" ? undefined : yearsKnown,
-      },
-      dataUrl,
-    );
+    const values = {
+      chairman_name_on_form: nameOnForm,
+      chairman_known_years: yearsKnown === "" ? undefined : yearsKnown,
+    };
+    const result = token
+      ? await submitChairmanSignatureViaTokenAction(token, values, dataUrl)
+      : await submitChairmanSignatureAction(applicationId, values, dataUrl);
     if (!result.ok) {
       if (result.fieldErrors) setFieldErrors(result.fieldErrors);
       setServerError(result.error ?? "Couldn't submit your signature.");
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
-    router.replace(`/branch/sign?just_signed=${encodeURIComponent(applicationId)}`);
+    router.replace(
+      token
+        ? `/branch-sign/${token}/done`
+        : `/branch/sign?just_signed=${encodeURIComponent(applicationId)}`,
+    );
   }
 
   return (
